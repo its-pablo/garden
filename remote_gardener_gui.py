@@ -409,7 +409,7 @@ class QPaintableCalendarWidget( QtWidgets.QCalendarWidget ):
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(606, 677)
+        MainWindow.resize(600, 720)
         MainWindow.setTabShape(QtWidgets.QTabWidget.TabShape.Triangular)
         MainWindow.setUnifiedTitleAndToolBarOnMac(True)
         self.centralwidget = QtWidgets.QWidget(parent=MainWindow)
@@ -705,6 +705,10 @@ class Ui_MainWindow(object):
         # Set the HOST and PORT default text
         self.txt_host.setText( HOST )
         self.txt_port.setText( str( PORT ) )
+
+        # Connect host and port to connect on enter
+        self.txt_host.returnPressed.connect( self.connect )
+        self.txt_port.returnPressed.connect( self.connect )
 
         # Disable the control interfaces until we have a connection
         self.gb_watering.setEnabled( False )

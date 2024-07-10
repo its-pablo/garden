@@ -8,11 +8,13 @@
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+from datetime import datetime
+
 
 class Ui_DaySchedule(object):
     def setupUi(self, DaySchedule):
         DaySchedule.setObjectName("DaySchedule")
-        DaySchedule.resize(333, 726)
+        DaySchedule.resize(330, 420)
         self.verticalLayout = QtWidgets.QVBoxLayout(DaySchedule)
         self.verticalLayout.setObjectName("verticalLayout")
         self.gb_d_sched = QtWidgets.QGroupBox(parent=DaySchedule)
@@ -126,6 +128,10 @@ class Ui_DaySchedule(object):
 
         # Set 24 hour format for time edit
         self.te_d_tod.setDisplayFormat( 'HH:mm' )
+
+        # Set clock time to current time
+        dt = datetime.today()
+        self.te_d_tod.setTime( QtCore.QTime( dt.hour, dt.minute ) )
 
     def retranslateUi(self, DaySchedule):
         _translate = QtCore.QCoreApplication.translate
