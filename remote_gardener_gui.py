@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 # Form implementation generated from reading ui file 'remote_gardener.ui'
 #
 # Created by: PyQt6 UI code generator 6.4.2
@@ -23,7 +21,7 @@ from day_schedule import Ui_DaySchedule
 # Connection variables
 HOST = '192.168.1.178'
 PORT = 50007
-VERSION = '0.6'
+VERSION = '0.7'
 ABOUT_STR = 'Remote Gardener v' + VERSION + ' created by Pablo Garcia Beltran (pablopgb.pgb@gmail.com)'
 DEMO_MODE = True
 
@@ -39,13 +37,13 @@ devs = {
 
 # Weekday index to string
 day_map = {
-    0: 'MONDAY',
-    1: 'TUESDAY',
-    2: 'WEDNESDAY',
-    3: 'THURSDAY',
-    4: 'FRIDAY',
-    5: 'SATURDAY',
-    6: 'SUNDAY'
+    0: 'Monday',
+    1: 'Tuesday',
+    2: 'Wednesday',
+    3: 'Thursday',
+    4: 'Friday',
+    5: 'Saturday',
+    6: 'Sunday'
 }
 
 ############################################################################################
@@ -179,16 +177,16 @@ class UpdateMonitor ( QtCore.QThread ):
                 elif container.HasField( 'all_watering_times' ):
                     self.print_info_signal.emit( 'WATERING SCHEDULE:' )
                     watering_times = [ x for x in container.all_watering_times.times ]
-                    self.save_schedule.emit( watering_times )
                     watering_times.sort( key=lambda x:x.timestamp.seconds )
+                    self.save_schedule.emit( watering_times )
                     for watering_time in watering_times:
                         dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
                         td = timedelta( seconds=watering_time.duration.seconds )
                         msg = ''
                         if watering_time.daily:
-                            msg = msg + 'DAILY AT ' + str( dt.strftime( '%H:%M' ) ) + ' FOR ' + str( td.seconds // 60 ) + ' minute' + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
+                            msg = msg + 'Daily at ' + str( dt.strftime( '%H:%M' ) ) + ' for ' + str( td.seconds // 60 ) + ' minute' + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
                         elif watering_time.weekly:
-                            msg = msg + 'WEEKLY ON ' + day_map[ dt.date().weekday() ] + 'S AT ' + str( dt.strftime( '%H:%M' ) ) + ' FOR ' + str( td.seconds // 60 ) + ' minute'  + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
+                            msg = msg + 'Weekly on ' + day_map[ dt.date().weekday() ] + 's at ' + str( dt.strftime( '%H:%M' ) ) + ' for ' + str( td.seconds // 60 ) + ' minute'  + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
                         else:
                             msg = 'Watering scheduled for ' + str( td ) + ' at ' + str( dt )
                         self.print_info_signal.emit( msg )
@@ -224,13 +222,135 @@ class QClickableLabel( QtWidgets.QLabel ):
 ############################################################
 
 
+#########################################################################################################
+# Table model to use in day schedule
+class TableModel( QtCore.QAbstractTableModel ):
+    def __init__ ( self, dt, schedule ):
+        QtCore.QAbstractTableModel.__init__( self )
+        self.dt = dt
+        self.schedule = schedule.copy()
+        self.table = []
+        dt_today = datetime.today()
+        dt_clicked = self.dt
+        dt_clicked_date = dt_clicked.date()
+        if dt_clicked_date >= dt_today.date() and self.schedule:
+            for watering_time in self.schedule:
+                dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+                td = timedelta( seconds=watering_time.duration.seconds )
+                period = watering_time.period
+                if dt_clicked_date >= dt.date():
+                    if watering_time.weekly and dt.date().weekday() == ( date.dayOfWeek() - 1 ):
+                        self.table.append( [ dt.time(), td.seconds // 60, period ] )
+                    elif watering_time.daily:
+                        self.table.append( [ dt.time(), td.seconds // 60, period ] )
+                    elif dt.date() == dt_clicked.date():
+                        self.table.append( [ dt.time(), td.seconds // 60, period ] )
+
+        self.table.sort()
+
+        self.horizontalHeaders = [''] * 3
+        self.setHeaderData( 0, QtCore.Qt.Orientation.Horizontal, 'TIME' )
+        self.setHeaderData( 1, QtCore.Qt.Orientation.Horizontal, 'DURATION' )
+        self.setHeaderData( 2, QtCore.Qt.Orientation.Horizontal, 'PERIOD' )
+
+    def data ( self, index, role ):
+        if role == QtCore.Qt.ItemDataRole.DisplayRole:
+            if index.column() == 0:
+                return str( self.table[ index.row() ][ index.column() ].strftime( '%H:%M' ) )
+            elif index.column() == 1:
+                return str( self.table[ index.row() ][ index.column() ] ) + ' mins'
+            elif index.column() == 2:
+                return str( self.table[ index.row() ][ index.column() ] ) + ' days'
+            else:
+                return str( self.table[ index.row() ][ index.column() ] )
+        elif role == QtCore.Qt.ItemDataRole.EditRole:
+            return self.table[ index.row() ][ index.column() ]
+
+    def rowCount( self, index ):
+        return len( self.table ) if self.table else 0
+
+    def columnCount( self, index ):
+        return len( self.table[0] ) if self.table else 0
+
+    def setHeaderData(self, section, orientation, data, role=QtCore.Qt.ItemDataRole.EditRole):
+        if orientation == QtCore.Qt.Orientation.Horizontal and role in (QtCore.Qt.ItemDataRole.DisplayRole, QtCore.Qt.ItemDataRole.EditRole):
+            try:
+                self.horizontalHeaders[section] = data
+                return True
+            except:
+                return False
+        return super().setHeaderData(section, orientation, data, role)
+
+    def headerData(self, section, orientation, role=QtCore.Qt.ItemDataRole.DisplayRole):
+        if orientation == QtCore.Qt.Orientation.Horizontal and role == QtCore.Qt.ItemDataRole.DisplayRole:
+            try:
+                return self.horizontalHeaders[section]
+            except:
+                pass
+        return super().headerData(section, orientation, role)
+#########################################################################################################
+
+
 ###################################################
 # Wrap day schedule
 class DaySchedule ( QtWidgets.QDialog ):
-    def __init__ ( self, parent=None ):
+    send_signal = QtCore.pyqtSignal( [ tool_shed.container ] )
+    schedule = []
+
+    def __init__ ( self, parent=None, schedule=None, dt=None ):
         QtWidgets.QDialog.__init__( self, parent )
         self.ui = Ui_DaySchedule()
         self.ui.setupUi( self )
+        self.schedule = schedule.copy()
+        self.dt = dt
+        self.model = TableModel( self.dt, self.schedule )
+        self.ui.tv_day_sched.setModel( self.model )
+        self.ui.tv_day_sched.doubleClicked.connect( self.copy_from_cell )
+        self.ui.btn_sched.clicked.connect( self.schedule_watering )
+
+    def schedule_watering ( self ):
+        period = self.ui.hs_period.value()
+        duration = self.ui.hs_dur.value()
+        time = self.ui.te_d_tod.time()
+        dt = datetime( year=self.dt.year, month=self.dt.month, day=self.dt.day, hour=time.hour(), minute=time.minute() )
+        td = timedelta( minutes=duration )
+        container = tool_shed.container()
+        container.set_watering_time.timestamp.seconds = int( dt.timestamp() )
+        container.set_watering_time.duration.FromTimedelta( td )
+        container.set_watering_time.period = period
+        self.send_signal.emit( container )
+        container = tool_shed.container()
+        container.get_watering_times = 1
+        self.send_signal.emit( container )
+
+    def unschedule_watering ( self ):
+        period = self.ui.hs_period.value()
+        duration = self.ui.hs_dur.value()
+        time = self.ui.te_d_tod.time()
+        dt = datetime( year=self.dt.year, month=self.dt.month, day=self.dt.day, hour=time.hour(), minute=time.minute() )
+        td = timedelta( minutes=duration )
+        container = tool_shed.container()
+        container.cancel_watering_time.timestamp.seconds = int( dt.timestamp() )
+        container.cancel_watering_time.duration.FromTimedelta( td )
+        container.cancel_watering_time.period = period
+        self.send_signal.emit( container )
+        container = tool_shed.container()
+        container.get_watering_times = 1
+        self.send_signal.emit( container )
+
+    def set_schedule ( self, schedule ):
+        self.schedule = schedule.copy()
+        self.model = TableModel( self.dt, self.schedule )
+        self.ui.tv_day_sched.setModel( self.model )
+
+    def copy_from_cell ( self, index ):
+        time = self.model.table[ index.row() ][ 0 ]
+        time = QtCore.QTime( time.hour, time.minute )
+        self.ui.te_d_tod.setTime( time )
+        dur = self.model.table[ index.row() ][ 1 ]
+        self.ui.hs_dur.setValue( dur )
+        period = self.model.table[ index.row() ][ 2 ]
+        self.ui.hs_period.setValue( period )
 ###################################################
 
 
@@ -246,29 +366,6 @@ class QPaintableCalendarWidget( QtWidgets.QCalendarWidget ):
     def set_schedule ( self, schedule ):
         self.schedule = schedule.copy()
         self.updateCells()
-
-    def check_day( self, date ):
-        dt_today = datetime.today()
-        dt_clicked = datetime( year=date.year(), month=date.month(), day=date.day() )
-        dt_clicked_date = dt_clicked.date()
-        if dt_clicked_date >= dt_today.date() and self.schedule:
-            time_list = []
-            for watering_time in self.schedule:
-                dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
-                td = timedelta( seconds=watering_time.duration.seconds )
-                if dt_clicked_date >= dt.date():
-                    if watering_time.weekly and dt.date().weekday() == ( date.dayOfWeek() - 1 ):
-                        time_list.append( ( dt.time(), td.seconds ) )
-                    elif watering_time.daily:
-                        time_list.append( ( dt.time(), td.seconds ) )
-                    elif dt.date() == dt_clicked.date():
-                        time_list.append( ( dt.time(), td.seconds ) )
-            
-            if time_list:
-                time_list.sort()
-                self.print_info_signal.emit( 'WATERING SCHEDULE for ' + str( dt_clicked.date() ) + ':' )
-                for time in time_list:
-                    self.print_info_signal.emit( str( time[0].strftime( '%H:%M' ) ) + ' FOR ' + str( time[1] // 60 ) + ' minute' + ( 's' if time[1] // 60 > 1 else '' ) )
 
     def paintCell ( self, painter, rect, date ):
         dt_today = datetime.today()
@@ -327,7 +424,7 @@ class QPaintableCalendarWidget( QtWidgets.QCalendarWidget ):
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(639, 731)
+        MainWindow.resize(606, 677)
         MainWindow.setTabShape(QtWidgets.QTabWidget.TabShape.Triangular)
         MainWindow.setUnifiedTitleAndToolBarOnMac(True)
         self.centralwidget = QtWidgets.QWidget(parent=MainWindow)
@@ -338,9 +435,9 @@ class Ui_MainWindow(object):
         sizePolicy.setHeightForWidth(self.centralwidget.sizePolicy().hasHeightForWidth())
         self.centralwidget.setSizePolicy(sizePolicy)
         self.centralwidget.setObjectName("centralwidget")
-        self.horizontalLayout_3 = QtWidgets.QHBoxLayout(self.centralwidget)
-        self.horizontalLayout_3.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetDefaultConstraint)
-        self.horizontalLayout_3.setObjectName("horizontalLayout_3")
+        self.gridLayout_4 = QtWidgets.QGridLayout(self.centralwidget)
+        self.gridLayout_4.setSizeConstraint(QtWidgets.QLayout.SizeConstraint.SetDefaultConstraint)
+        self.gridLayout_4.setObjectName("gridLayout_4")
         self.widget_controls = QtWidgets.QWidget(parent=self.centralwidget)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Maximum, QtWidgets.QSizePolicy.Policy.Preferred)
         sizePolicy.setHorizontalStretch(0)
@@ -389,61 +486,9 @@ class Ui_MainWindow(object):
         self.gb_watering.setObjectName("gb_watering")
         self.verticalLayout_2 = QtWidgets.QVBoxLayout(self.gb_watering)
         self.verticalLayout_2.setObjectName("verticalLayout_2")
-        self.gb_sched = QtWidgets.QGroupBox(parent=self.gb_watering)
-        self.gb_sched.setObjectName("gb_sched")
-        self.verticalLayout_4 = QtWidgets.QVBoxLayout(self.gb_sched)
-        self.verticalLayout_4.setObjectName("verticalLayout_4")
-        self.btn_get_sched = QtWidgets.QPushButton(parent=self.gb_sched)
+        self.btn_get_sched = QtWidgets.QPushButton(parent=self.gb_watering)
         self.btn_get_sched.setObjectName("btn_get_sched")
-        self.verticalLayout_4.addWidget(self.btn_get_sched)
-        self.line_6 = QtWidgets.QFrame(parent=self.gb_sched)
-        self.line_6.setFrameShape(QtWidgets.QFrame.Shape.HLine)
-        self.line_6.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
-        self.line_6.setObjectName("line_6")
-        self.verticalLayout_4.addWidget(self.line_6)
-        self.horizontalLayout_5 = QtWidgets.QHBoxLayout()
-        self.horizontalLayout_5.setObjectName("horizontalLayout_5")
-        self.cb_sched_weekly = QtWidgets.QCheckBox(parent=self.gb_sched)
-        self.cb_sched_weekly.setChecked(False)
-        self.cb_sched_weekly.setAutoExclusive(False)
-        self.cb_sched_weekly.setObjectName("cb_sched_weekly")
-        self.horizontalLayout_5.addWidget(self.cb_sched_weekly)
-        self.cb_sched_daily = QtWidgets.QCheckBox(parent=self.gb_sched)
-        self.cb_sched_daily.setChecked(False)
-        self.cb_sched_daily.setAutoExclusive(False)
-        self.cb_sched_daily.setObjectName("cb_sched_daily")
-        self.horizontalLayout_5.addWidget(self.cb_sched_daily)
-        self.verticalLayout_4.addLayout(self.horizontalLayout_5)
-        self.de_sched = QtWidgets.QDateEdit(parent=self.gb_sched)
-        self.de_sched.setObjectName("de_sched")
-        self.verticalLayout_4.addWidget(self.de_sched)
-        self.te_sched = QtWidgets.QTimeEdit(parent=self.gb_sched)
-        self.te_sched.setObjectName("te_sched")
-        self.verticalLayout_4.addWidget(self.te_sched)
-        self.widget_2 = QtWidgets.QWidget(parent=self.gb_sched)
-        self.widget_2.setObjectName("widget_2")
-        self.horizontalLayout = QtWidgets.QHBoxLayout(self.widget_2)
-        self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
-        self.horizontalLayout.setObjectName("horizontalLayout")
-        self.lbl_sched_dur = QtWidgets.QLabel(parent=self.widget_2)
-        self.lbl_sched_dur.setObjectName("lbl_sched_dur")
-        self.horizontalLayout.addWidget(self.lbl_sched_dur)
-        self.sb_sched_dur = QtWidgets.QSpinBox(parent=self.widget_2)
-        self.sb_sched_dur.setMinimum(1)
-        self.sb_sched_dur.setProperty("value", 1)
-        self.sb_sched_dur.setObjectName("sb_sched_dur")
-        self.horizontalLayout.addWidget(self.sb_sched_dur)
-        self.lbl_sched_dur_units = QtWidgets.QLabel(parent=self.widget_2)
-        self.lbl_sched_dur_units.setObjectName("lbl_sched_dur_units")
-        self.horizontalLayout.addWidget(self.lbl_sched_dur_units)
-        self.verticalLayout_4.addWidget(self.widget_2)
-        self.btn_sched = QtWidgets.QPushButton(parent=self.gb_sched)
-        self.btn_sched.setObjectName("btn_sched")
-        self.verticalLayout_4.addWidget(self.btn_sched)
-        self.btn_unsched = QtWidgets.QPushButton(parent=self.gb_sched)
-        self.btn_unsched.setObjectName("btn_unsched")
-        self.verticalLayout_4.addWidget(self.btn_unsched)
-        self.verticalLayout_2.addWidget(self.gb_sched)
+        self.verticalLayout_2.addWidget(self.btn_get_sched)
         self.widget_3 = QtWidgets.QWidget(parent=self.gb_watering)
         self.widget_3.setObjectName("widget_3")
         self.horizontalLayout_2 = QtWidgets.QHBoxLayout(self.widget_3)
@@ -516,7 +561,7 @@ class Ui_MainWindow(object):
         self.btn_about.setObjectName("btn_about")
         self.verticalLayout_8.addWidget(self.btn_about)
         self.verticalLayout_3.addWidget(self.gb_misc)
-        self.horizontalLayout_3.addWidget(self.widget_controls)
+        self.gridLayout_4.addWidget(self.widget_controls, 0, 0, 1, 1)
         self.widget_status = QtWidgets.QWidget(parent=self.centralwidget)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Preferred, QtWidgets.QSizePolicy.Policy.Preferred)
         sizePolicy.setHorizontalStretch(0)
@@ -622,13 +667,15 @@ class Ui_MainWindow(object):
         self.verticalLayout_9.setObjectName("verticalLayout_9")
         self.cw_schedule = QPaintableCalendarWidget(parent=self.gb_calendar)
         self.cw_schedule.setGridVisible(True)
+        self.cw_schedule.setHorizontalHeaderFormat(QtWidgets.QCalendarWidget.HorizontalHeaderFormat.ShortDayNames)
         self.cw_schedule.setVerticalHeaderFormat(QtWidgets.QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
         self.cw_schedule.setNavigationBarVisible(True)
         self.cw_schedule.setDateEditEnabled(False)
         self.cw_schedule.setObjectName("cw_schedule")
         self.verticalLayout_9.addWidget(self.cw_schedule)
         self.verticalLayout_6.addWidget(self.gb_calendar)
-        self.gb_output = QtWidgets.QGroupBox(parent=self.widget_status)
+        self.gridLayout_4.addWidget(self.widget_status, 0, 1, 1, 1)
+        self.gb_output = QtWidgets.QGroupBox(parent=self.centralwidget)
         self.gb_output.setObjectName("gb_output")
         self.verticalLayout = QtWidgets.QVBoxLayout(self.gb_output)
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
@@ -637,7 +684,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setObjectName("scrollArea")
         self.scrollAreaWidgetContents = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 453, 222))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 584, 143))
         self.scrollAreaWidgetContents.setObjectName("scrollAreaWidgetContents")
         self.verticalLayout_7 = QtWidgets.QVBoxLayout(self.scrollAreaWidgetContents)
         self.verticalLayout_7.setContentsMargins(0, 0, 0, 0)
@@ -648,14 +695,11 @@ class Ui_MainWindow(object):
         self.verticalLayout_7.addWidget(self.text_output)
         self.scrollArea.setWidget(self.scrollAreaWidgetContents)
         self.verticalLayout.addWidget(self.scrollArea)
-        self.verticalLayout_6.addWidget(self.gb_output)
-        self.horizontalLayout_3.addWidget(self.widget_status)
+        self.gridLayout_4.addWidget(self.gb_output, 1, 0, 1, 2)
         MainWindow.setCentralWidget(self.centralwidget)
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
-
-        print( self.cw_schedule.paintCell )
 
         # Create palettes used to color labels
         self.green = QtGui.QPalette()
@@ -672,15 +716,6 @@ class Ui_MainWindow(object):
             tool_shed.container.devices.DEV_SNS_WELL_EMPTY: ( self.lbl_well_empty, self.lbl_well_empty_disp ),
             tool_shed.container.devices.DEV_SNS_RAIN: ( self.lbl_rain, self.lbl_rain_disp ),
         }
-
-        # Initialize the time of day
-        dt = datetime.today()
-        date = QtCore.QDate()
-        date.setDate( dt.year, dt.month, dt.day )
-        time = QtCore.QTime()
-        time.setHMS( dt.hour, dt.minute, dt.second, int( dt.microsecond / 1000 ) )
-        self.de_sched.setDate( date )
-        self.te_sched.setTime( time )
 
         # Set the HOST and PORT default text
         self.txt_host.setText( HOST )
@@ -718,12 +753,6 @@ class Ui_MainWindow(object):
         # Connect get schedule button to slot
         self.btn_get_sched.pressed.connect( self.get_schedule )
 
-        # Connect schedule watering button to slot
-        self.btn_sched.pressed.connect( self.schedule_watering )
-
-        # Connect unschedule watering button to slot
-        self.btn_unsched.pressed.connect( self.unschedule_watering )
-
         # Connect start watering button to slot
         self.btn_start_water.pressed.connect( self.start_watering )
 
@@ -739,21 +768,9 @@ class Ui_MainWindow(object):
         # Connect peak event log button to slot
         self.btn_log.pressed.connect( self.peak_event_log )
 
-        # Make scheduling checkboxes self exclusive
-        self.cb_sched_daily.clicked.connect( lambda checked : self.cb_sched_weekly.setChecked( False ) if checked else None )
-        self.cb_sched_weekly.clicked.connect( lambda checked : self.cb_sched_daily.setChecked( False ) if checked else None )
-
-        # Sync calendar and date edit connection
-        self.de_sched.dateChanged.connect( self.sync_date_edit_onto_calendar )
-        self.cw_schedule.selectionChanged.connect( self.sync_calendar_onto_date_edit )
-
         # Connect calendar signals
-        self.cw_schedule.activated.connect( self.cw_schedule.check_day )
         self.cw_schedule.activated.connect( self.day_schedule_popup )
         self.cw_schedule.print_info_signal.connect( self.text_output.append )
-
-        # Set 24 hour format for time edit
-        self.te_sched.setDisplayFormat( 'HH:mm' )
 
         # Set background color of navigation bar of calendar
         self.cw_schedule.setStyleSheet( "QCalendarWidget  QWidget#qt_calendar_navigationbar"
@@ -763,7 +780,10 @@ class Ui_MainWindow(object):
                                         "QCalendarWidget  QWidget# qt_calendar_navigationbar::hover"
                                         "{"
                                         "background-color : darkGray;"
-                                        "}" ) 
+                                        "}" )
+
+        # Initialize popup to None
+        self.popup = None
 
         # Hook up sensor overrides if demo mode
         if DEMO_MODE:
@@ -782,14 +802,7 @@ class Ui_MainWindow(object):
         self.lbl_port.setText(_translate("MainWindow", "Port:"))
         self.btn_connect.setText(_translate("MainWindow", "Connect"))
         self.gb_watering.setTitle(_translate("MainWindow", "Watering"))
-        self.gb_sched.setTitle(_translate("MainWindow", "Scheduling"))
         self.btn_get_sched.setText(_translate("MainWindow", "Get Schedule"))
-        self.cb_sched_weekly.setText(_translate("MainWindow", "Weekly"))
-        self.cb_sched_daily.setText(_translate("MainWindow", "Daily"))
-        self.lbl_sched_dur.setText(_translate("MainWindow", "Duration:"))
-        self.lbl_sched_dur_units.setText(_translate("MainWindow", "min"))
-        self.btn_sched.setText(_translate("MainWindow", "Schedule"))
-        self.btn_unsched.setText(_translate("MainWindow", "Unschedule"))
         self.lbl_water_dur.setText(_translate("MainWindow", "Duration"))
         self.lbl_water_dur_units.setText(_translate("MainWindow", "min"))
         self.btn_start_water.setText(_translate("MainWindow", "Start"))
@@ -800,7 +813,7 @@ class Ui_MainWindow(object):
         self.btn_start_pump.setText(_translate("MainWindow", "Start"))
         self.btn_stop_pump.setText(_translate("MainWindow", "Stop"))
         self.gb_misc.setTitle(_translate("MainWindow", "Miscellaneous"))
-        self.btn_log.setText(_translate("MainWindow", "Event Log"))
+        self.btn_log.setText(_translate("MainWindow", "Peak Event Log"))
         self.btn_about.setText(_translate("MainWindow", "About"))
         self.gb_status.setTitle(_translate("MainWindow", "Status"))
         self.lbl_tank_empty.setText(_translate("MainWindow", "Tank empty sensor status:"))
@@ -862,6 +875,8 @@ class Ui_MainWindow(object):
             self.gb_status.setEnabled( True )
             self.gb_calendar.setEnabled( True )
             self.btn_log.setEnabled( True )
+            if self.popup:
+                self.popup.setEnabled( True )
 
             # Get device updates
             self.get_device_updates()
@@ -897,6 +912,8 @@ class Ui_MainWindow(object):
         self.gb_status.setEnabled( False )
         self.gb_calendar.setEnabled( False )
         self.btn_log.setEnabled( False )
+        if self.popup:
+            self.popup.setEnabled( False )
 
         # Reset queues
         def empty_queue ( q ):
@@ -930,42 +947,6 @@ class Ui_MainWindow(object):
         container = tool_shed.container()
         container.get_watering_times = 1
         self.q_out_enqueue( container )
-
-    def schedule_watering ( self ):
-        daily = self.cb_sched_daily.isChecked()
-        weekly = self.cb_sched_weekly.isChecked()
-        date = self.de_sched.date()
-        time = self.te_sched.time()
-        duration = self.sb_sched_dur.value()
-        dt = datetime( year=date.year(), month=date.month(), day=date.day(), hour=time.hour(), minute=time.minute() )
-        td = timedelta( minutes=duration )
-        container = tool_shed.container()
-        container.set_watering_time.timestamp.seconds = int( dt.timestamp() )
-        container.set_watering_time.duration.FromTimedelta( td )
-        if daily:
-            container.set_watering_time.daily = daily
-        elif weekly:
-            container.set_watering_time.weekly = weekly
-        self.q_out_enqueue( container )
-        self.get_schedule()
-
-    def unschedule_watering ( self ):
-        daily = self.cb_sched_daily.isChecked()
-        weekly = self.cb_sched_weekly.isChecked()
-        date = self.de_sched.date()
-        time = self.te_sched.time()
-        duration = self.sb_sched_dur.value()
-        dt = datetime( year=date.year(), month=date.month(), day=date.day(), hour=time.hour(), minute=time.minute() )
-        td = timedelta( minutes=duration )
-        container = tool_shed.container()
-        container.cancel_watering_time.timestamp.seconds = int( dt.timestamp() )
-        container.cancel_watering_time.duration.FromTimedelta( td )
-        if daily:
-            container.cancel_watering_time.daily = daily
-        elif weekly:
-            container.cancel_watering_time.weekly = weekly
-        self.q_out_enqueue( container )
-        self.get_schedule()
 
     def start_watering ( self ):
         duration = self.sb_water_dur.value() if self.cb_water_dur.isChecked() else 0
@@ -1012,6 +993,8 @@ class Ui_MainWindow(object):
 
     def save_schedule ( self, schedule ):
         self.cw_schedule.set_schedule( schedule )
+        if self.popup:
+            self.popup.set_schedule( schedule )
 
     def q_out_enqueue ( self, container ):
         self.q_out_lock.lock()
@@ -1022,22 +1005,12 @@ class Ui_MainWindow(object):
         if self.pulse_mon.isActive():
             self.pulse_mon.start( 5000 )
 
-    def sync_date_edit_onto_calendar ( self ):
-        de_date = self.de_sched.date()
-        cw_date = self.cw_schedule.selectedDate()
-        if de_date != cw_date:
-            self.cw_schedule.setSelectedDate( de_date )
-
-    def sync_calendar_onto_date_edit ( self ):
-        de_date = self.de_sched.date()
-        cw_date = self.cw_schedule.selectedDate()
-        if de_date != cw_date:
-            self.de_sched.setDate( cw_date )
-
-    def day_schedule_popup ( self, self.centralwidget ):
-        popup = DaySchedule( self.centralwidget )
-        popup.exec()
-
+    def day_schedule_popup ( self, date ):
+        dt = datetime( year=date.year(), month=date.month(), day=date.day() )
+        self.popup = DaySchedule( self.centralwidget, self.cw_schedule.schedule, dt=dt )
+        self.popup.setWindowTitle( str( dt.date() ) + ' Schedule' )
+        self.popup.send_signal.connect( self.q_out_enqueue )
+        self.popup.exec()
 
 if __name__ == "__main__":
     import sys

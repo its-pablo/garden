@@ -28,10 +28,7 @@ message container {
 	message watering_time {
 		google.protobuf.Timestamp timestamp = 1;
 		google.protobuf.Duration duration = 2;
-		oneof recurring {
-			bool daily = 3;
-			bool weekly = 4;
-		}
+		google.protobuf.Duration period = 3;
 	}
 
 	message watering_times {

@@ -22,6 +22,9 @@ class Ui_DaySchedule(object):
         self.verticalLayout_2.setObjectName("verticalLayout_2")
         self.tv_day_sched = QtWidgets.QTableView(parent=self.gb_d_sched)
         self.tv_day_sched.setObjectName("tv_day_sched")
+        self.tv_day_sched.horizontalHeader().setCascadingSectionResizes(True)
+        self.tv_day_sched.horizontalHeader().setStretchLastSection(True)
+        self.tv_day_sched.verticalHeader().setVisible(False)
         self.verticalLayout_2.addWidget(self.tv_day_sched)
         self.verticalLayout.addWidget(self.gb_d_sched)
         self.gb_d_period = QtWidgets.QGroupBox(parent=DaySchedule)
@@ -34,7 +37,7 @@ class Ui_DaySchedule(object):
         self.hs_period = QtWidgets.QSlider(parent=self.gb_d_period)
         self.hs_period.setMinimum(0)
         self.hs_period.setMaximum(28)
-        self.hs_period.setProperty("value", 7)
+        self.hs_period.setProperty("value", 0)
         self.hs_period.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self.hs_period.setTickPosition(QtWidgets.QSlider.TickPosition.TicksAbove)
         self.hs_period.setTickInterval(1)
@@ -54,7 +57,7 @@ class Ui_DaySchedule(object):
         self.hs_dur = QtWidgets.QSlider(parent=self.gb_d_dur)
         self.hs_dur.setMinimum(1)
         self.hs_dur.setMaximum(60)
-        self.hs_dur.setProperty("value", 10)
+        self.hs_dur.setProperty("value", 1)
         self.hs_dur.setOrientation(QtCore.Qt.Orientation.Horizontal)
         self.hs_dur.setTickPosition(QtWidgets.QSlider.TickPosition.TicksAbove)
         self.hs_dur.setTickInterval(1)
@@ -112,6 +115,17 @@ class Ui_DaySchedule(object):
 
         self.retranslateUi(DaySchedule)
         QtCore.QMetaObject.connectSlotsByName(DaySchedule)
+
+        # Connect period slider to period label
+        self.hs_period.valueChanged.connect( lambda val: self.lbl_period.setText( str( val ) + ' days' ) )
+        self.hs_period.setValue( 7 )
+
+        # Connect duration slider to duration label
+        self.hs_dur.valueChanged.connect( lambda val: self.lbl_dur.setText( str( val ) + ' mins' ) )
+        self.hs_dur.setValue( 10 )
+
+        # Set 24 hour format for time edit
+        self.te_d_tod.setDisplayFormat( 'HH:mm' )
 
     def retranslateUi(self, DaySchedule):
         _translate = QtCore.QCoreApplication.translate
