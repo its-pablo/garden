@@ -90,7 +90,6 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 	##############################################################
 	# Thread that handles sending queued messages
 	def sender ():
-		time.sleep( 1 )
 		print( 'Sender thread is running' )
 
 		while True:
@@ -123,7 +122,6 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 	####################################################################
 	# Thread that handles queueing the heartbeat
 	def heartbeat ():
-		time.sleep( 1 )
 		print( 'Heartbeat thread is running' )
 
 		while True:

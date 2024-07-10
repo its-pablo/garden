@@ -32,7 +32,7 @@ kill = threading.Event()
 s_lock = threading.Lock()
 HOST = '192.168.1.178'
 PORT = 50007
-VERSION = '0.1'
+VERSION = '0.2'
 s = None
 
 # Create device list:
@@ -64,7 +64,7 @@ def sender ():
                     if not container.HasField( 'get_device_updates' ):
                         print( 'Sending request:\n', container )
                     s.sendall( data )
-                    time.sleep( 0.25 )
+                    time.sleep( 0.05 )
 
                 except ConnectionAbortedError:
                     kill.set()
