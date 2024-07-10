@@ -32,7 +32,8 @@ kill = threading.Event()
 s_lock = threading.Lock()
 HOST = '192.168.1.178'
 PORT = 50007
-VERSION = '0.2'
+VERSION = '0.3'
+ABOUT_STR = 'Remote Gardener v' + VERSION + ' created by Pablo Garcia Beltran (pablopgb.pgb@gmail.com)'
 s = None
 
 # Create device list:
@@ -48,7 +49,6 @@ devs = {
 ##############################################################
 # Thread that handles sending queued messages
 def sender ():
-    time.sleep( 1 )
     print( 'Sender thread is running' )
 
     while True:
@@ -623,6 +623,14 @@ class Ui_MainWindow(object):
             receiver_thread.start()
             heartbeat_thread.start()
 
+            # Print about string
+            self.about()
+
+            # Get device updates
+            container = tool_shed.container()
+            container.get_device_updates = 1
+            q_out.put( container )
+
             # Get watering schedule
             container = tool_shed.container()
             container.get_watering_times = 1
@@ -635,7 +643,7 @@ class Ui_MainWindow(object):
             self.text_output.append( 'Failed to connect to host' )
 
     def about ( self ):
-        self.text_output.append( 'Remote Gardener v' + VERSION + ' created by Pablo Garcia Beltran (pablopgb.pgb@gmail.com)' )
+        self.text_output.append( ABOUT_STR )
 
     def get_schedule ( self ):
         container = tool_shed.container()
