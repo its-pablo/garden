@@ -8,14 +8,20 @@ import threading
 import queue
 import socket
 import garden_pb2 as tool_shed
-from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import DecodeError
 from datetime import timedelta
 from datetime import datetime
+from os import getpid
 
-# Set up thread safe queue
+# Print process ID in case it gets hung
+print( 'PID:', getpid() )
+
+# Set up thread safe queues
 q_in = queue.Queue()
 q_out = queue.Queue()
+
+# Set up event for terminating threads
+kill = threading.Event()
 
 # Set up socket and lock for test
 s_lock = threading.Lock()
@@ -31,6 +37,10 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 		print( 'Receiver thread is running' )
 
 		while True:
+			# Check to see if we should kill thread
+			if kill.is_set():
+				break
+
 			with s_lock:
 				try:
 					data = s.recv( 1024 )
@@ -52,7 +62,6 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 
 							elif container.HasField( 'all_watering_times' ):
 								print( 'Received all scheduled watering times:' )
-								#print( MessageToJson( container.all_watering_times ) )
 								for watering_time in container.all_watering_times.times:
 									dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
 									td = timedelta( seconds=watering_time.duration.seconds )
@@ -67,6 +76,12 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 				except BlockingIOError:
 					continue
 
+				except ConnectionAbortedError:
+					kill.set()
+
+				except ConnectionResetError:
+					kill.set()
+
 	# Turn on the receiver thread
 	receiver_thread = threading.Thread( target=receiver, daemon=True )
 	receiver_thread.start()
@@ -75,13 +90,30 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 	##############################################################
 	# Thread that handles sending queued messages
 	def sender ():
+		time.sleep( 1 )
 		print( 'Sender thread is running' )
 
 		while True:
-			container = q_out.get()
-			data = container.SerializeToString()
-			with s_lock:
-				s.sendall( data )
+			# Check to see if we should kill thread
+			if kill.is_set():
+				break
+
+			try:
+				container = q_out.get_nowait()
+				data = container.SerializeToString()
+				with s_lock:
+					try:
+						s.sendall( data )
+						time.sleep( 0.25 )
+
+					except ConnectionAbortedError:
+						kill.set()
+
+					except ConnectionResetError:
+						kill.set()
+
+			except queue.Empty:
+				continue
 
 	# Turn on the sender thread
 	sender_thread = threading.Thread( target=sender, daemon=True )
@@ -91,22 +123,36 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 	####################################################################
 	# Thread that handles queueing the heartbeat
 	def heartbeat ():
+		time.sleep( 1 )
 		print( 'Heartbeat thread is running' )
 
 		while True:
+			# Check to see if we should kill thread
+			if kill.is_set():
+				break
+
 			container = tool_shed.container()
 			container.heartbeat = 1
 			q_out.put( container )
 			time.sleep( 1 )
+
 
 	# Turn on the heartbeat thread
 	heartbeat_thread = threading.Thread( target=heartbeat, daemon=True )
 	heartbeat_thread.start()
 	####################################################################
 
+	# Choice variable
+	choice = 0
+
 	# Main thread loop, reads commands and sends them to the sender_thread
 	while True:
-		container = tool_shed.container()
+		if kill.is_set():
+			break
+
+		if choice == -2:
+			continue
+
 		print( 'Options:' )
 		print( '\t0. Device status update' )
 		print( '\t1. Set daily watering time' )
@@ -118,9 +164,13 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 		print( '\t7. Pump now' )
 		print( '\t8. Stop pumping' )
 		print( '\tPress ENTER to exit.' )
-		choice = input( 'Choice:\n' )
-		if not choice:
-			break
+		choice = input( 'Choose an option:\n' )
+		if choice == '':
+			# Notify all threads of shutdown
+			kill.set()
+			# Continue
+			continue
+		container = tool_shed.container()
 		try:
 			choice = int( choice )
 			if choice == 0:
@@ -128,78 +178,138 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 			elif choice == 1:
 				hour = input( 'Input an hour of day (0 - 23):\n' )
 				minute = input( 'Input a minute of hour (0 - 59):\n' )
-				try:
-					hour = int( hour )
-					minute = int( minute )
-					if hour < 0 or hour > 23:
-						print( 'Not an hour of day!' )
-						container = None
-					elif minute < 0 or minute > 59:
-						print( 'Not a minute of hour!' )
-						container = None
-					else:
-						dt = datetime.today()
-						print( dt )
-						if hour < dt.hour:
-							dt = dt + timedelta( days=1 )
-						elif hour == dt.hour and minute < dt.minute:
-							dt = dt + timedelta( days=1 )
-						dt = dt.replace( hour=hour, minute=minute, second=0, microsecond=0 )
-						print( dt )
-						container.set_watering_time.timestamp.seconds = int( dt.timestamp() )
-						td = timedelta( minutes=1 )
-						container.set_watering_time.duration.FromTimedelta( td )
-						container.set_watering_time.daily = True
-				except ValueError:
-					print( 'Not an integer choice!' )
+				duration = input( 'Input a duration in minutes:\n' )
+				hour = int( hour )
+				minute = int( minute )
+				duration = int( duration )
+				if hour < 0 or hour > 23:
+					print( 'Not an hour of day!' )
 					container = None
+				elif minute < 0 or minute > 59:
+					print( 'Not a minute of hour!' )
+					container = None
+				elif duration < 0:
+					print( 'Duration is less than 0!' )
+					container = None
+				else:
+					dt = datetime.today()
+					print( dt )
+					if hour < dt.hour:
+						dt = dt + timedelta( days=1 )
+					elif hour == dt.hour and minute < dt.minute:
+						dt = dt + timedelta( days=1 )
+					dt = dt.replace( hour=hour, minute=minute, second=0, microsecond=0 )
+					print( dt )
+					container.set_watering_time.timestamp.seconds = int( dt.timestamp() )
+					td = timedelta( minutes=duration )
+					container.set_watering_time.duration.FromTimedelta( td )
+					container.set_watering_time.daily = True
+
 			elif choice == 2:
 				container.get_next_watering_time = 1
+
 			elif choice == 3:
 				container.get_watering_times = 1
+
 			elif choice == 4:
 				hour = input( 'Input an hour of day (0 - 23):\n' )
 				minute = input( 'Input a minute of hour (0 - 59):\n' )
-				try:
-					hour = int( hour )
-					minute = int( minute )
-					if hour < 0 or hour > 23:
-						print( 'Not an hour of day!' )
-						container = None
-					elif minute < 0 or minute > 59:
-						print( 'Not a minute of hour!' )
-						container = None
-					else:
-						dt = datetime.today()
-						print( dt )
-						if hour < dt.hour:
-							dt = dt + timedelta( days=1 )
-						elif hour == dt.hour and minute < dt.minute:
-							dt = dt + timedelta( days=1 )
-						dt = dt.replace( hour=hour, minute=minute, second=0, microsecond=0 )
-						print( dt )
-						container.cancel_watering_time.timestamp.seconds = int( dt.timestamp() )
-						td = timedelta( minutes=1 )
-						container.cancel_watering_time.duration.FromTimedelta( td )
-						container.cancel_watering_time.daily = True
-				except ValueError:
-					print( 'Not an integer choice!' )
+				duration = input( 'Input a duration in minutes:\n' )
+				hour = int( hour )
+				minute = int( minute )
+				duration = int( duration )
+				if hour < 0 or hour > 23:
+					print( 'Not an hour of day!' )
 					container = None
+				elif minute < 0 or minute > 59:
+					print( 'Not a minute of hour!' )
+					container = None
+				elif duration < 1:
+					print( 'Duration is less than 1!' )
+					container = None
+				else:
+					dt = datetime.today()
+					print( dt )
+					if hour < dt.hour:
+						dt = dt + timedelta( days=1 )
+					elif hour == dt.hour and minute < dt.minute:
+						dt = dt + timedelta( days=1 )
+					dt = dt.replace( hour=hour, minute=minute, second=0, microsecond=0 )
+					print( dt )
+					container.cancel_watering_time.timestamp.seconds = int( dt.timestamp() )
+					td = timedelta( minutes=duration )
+					container.cancel_watering_time.duration.FromTimedelta( td )
+					container.cancel_watering_time.daily = True
+					
 			elif choice == 5:
-				td = timedelta( minutes=1 )
-				container.water_now.duration.FromTimedelta( td )
+				duration = input( 'Input a duration in minutes:\n' )
+				duration = int( duration )
+				if duration < 0:
+					print( 'Duration is less than 0!' )
+					container = None
+				else:
+					td = timedelta( minutes=duration )
+					container.water_now.duration.FromTimedelta( td )
+
 			elif choice == 6:
 				container.stop_watering = 1
+
 			elif choice == 7:
-				td = timedelta( minutes=1 )
-				container.pump_now.duration.FromTimedelta( td )
+				duration = input( 'Input a duration in minutes:\n' )
+				duration = int( duration )
+				if duration < 0:
+					print( 'Duration is less than 0!' )
+					container = None
+				else:
+					td = timedelta( minutes=duration )
+					container.pump_now.duration.FromTimedelta( td )
+
 			elif choice == 8:
 				container.stop_pumping = 1
+
+			# Secret option: override sensor
+			elif choice == -1:
+				sns_list = [
+					tool_shed.container.devices.DEV_SNS_TANK_FULL,
+					tool_shed.container.devices.DEV_SNS_TANK_EMPTY,
+					tool_shed.container.devices.DEV_SNS_WELL_EMPTY,
+					tool_shed.container.devices.DEV_SNS_RAIN
+				]
+				print( 'Secret sensor override menu!' )
+				print( '\t0. DEV_SNS_TANK_FULL' )
+				print( '\t1. DEV_SNS_TANK_EMPTY' )
+				print( '\t2. DEV_SNS_WELL_EMPTY' )
+				print( '\t3. DEV_SNS_RAIN' )
+				sensor = input( 'Choose a sensor (0 - 3):\n' )
+				print( '\t0. INACTIVE' )
+				print( '\t1. ACTIVE' )
+				status = input( 'Choose a status (0 - 1):\n' )
+				sensor = int( sensor )
+				status = int( status )
+				if sensor < 0 or sensor > 3:
+					print( 'Invalid sensor choice!' )
+					container = None
+				elif status < 0 or status > 1:
+					print( 'Invalid status choice!' )
+					container = None
+				else:
+					container.sensor_override.device = sns_list[ sensor ]
+					container.sensor_override.status =  ( status != 0 )
+
+			# Secret option: shutdown daemon
+			elif choice == -2:
+				container.shutdown = 1
+
 			else:
 				container = None
+
 		except ValueError:
 			print( 'Not an integer choice!' )
 			container = None
 
 		if container:
 			q_out.put( container )
+
+	receiver_thread.join()
+	sender_thread.join()
+	heartbeat_thread.join()

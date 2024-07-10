@@ -51,7 +51,14 @@ message container {
 		watering_time next_watering_time = 9;
 		watering_times all_watering_times = 10;
 		watering_time cancel_watering_time = 11;
-		pump pump_now = 12;
-		int32 stop_pumping = 13;
+		int32 no_watering_times = 12;
+		pump pump_now = 13;
+		int32 stop_pumping = 14;
+		int32 peak_event_log = 15;
+		string logs = 16;
+		int32 no_logs = 17;
+
+		int32 shutdown = 98;
+		device_update sensor_override = 99;
 	}
 }

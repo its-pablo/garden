@@ -16,9 +16,7 @@ SNS_RAIN = DigitalInputDevice(12)
 
 # Gets the status of the pump
 def get_pump_status ():
-    status = False
-    status = ACT_PUMP.is_active
-    return status
+    return ACT_PUMP.is_active
 
 # Sets and returns status of the pump
 def set_pump_status ( status ):
@@ -31,9 +29,7 @@ def set_pump_status ( status ):
 
 # Gets the status of the valve
 def get_valve_status ():
-    status = False
-    status = ACT_VALVE.is_active
-    return status
+    return ACT_VALVE.is_active
 
 # Sets and returns status of the valve
 def set_valve_status ( status ):
@@ -46,24 +42,16 @@ def set_valve_status ( status ):
 
 # Gets the status of the tank full sensor
 def get_tank_full_status ():
-    status = False
-    status = SNS_TANK_FULL.is_active
-    return status
+    return SNS_TANK_FULL.is_active
 
 # Gets the status of the tank empty sensor
 def get_tank_empty_status ():
-    status = False
-    status = SNS_TANK_EMPTY.is_active
-    return status
+    return SNS_TANK_EMPTY.is_active
 
 # Gets the status of the well empty sensor
 def get_well_empty_status ():
-    status = False
-    status = SNS_WELL_EMPTY.is_active
-    return status
+    return SNS_WELL_EMPTY.is_active
 
 # Gets the status of the rain sensor
 def get_rain_status ():
-    status = False
-    status = SNS_RAIN.is_active
-    return status
+    return SNS_RAIN.is_active
