@@ -9,32 +9,20 @@
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 # Imports
-import sys
 import time
-import threading
 import queue
 import socket
 import garden_pb2 as tool_shed
 from google.protobuf.message import DecodeError
 from datetime import timedelta
 from datetime import datetime
-from enum import Enum
-
-# Set up thread safe queues
-q_in = queue.Queue()
-q_out = queue.Queue()
-q_int = queue.Queue()
-
-# Set up event for terminating threads
-kill = threading.Event()
 
 # Connection variables
-s_lock = threading.Lock()
 HOST = '192.168.1.178'
 PORT = 50007
-VERSION = '0.3'
+VERSION = '0.6'
 ABOUT_STR = 'Remote Gardener v' + VERSION + ' created by Pablo Garcia Beltran (pablopgb.pgb@gmail.com)'
-s = None
+DEMO_MODE = True
 
 # Create device list:
 devs = {
@@ -46,57 +34,92 @@ devs = {
     tool_shed.container.devices.DEV_SNS_RAIN,
 }
 
-##############################################################
-# Thread that handles sending queued messages
-def sender ():
-    print( 'Sender thread is running' )
+# Weekday index to string
+day_map = {
+    0: 'MONDAY',
+    1: 'TUESDAY',
+    2: 'WEDNESDAY',
+    3: 'THURSDAY',
+    4: 'FRIDAY',
+    5: 'SATURDAY',
+    6: 'SUNDAY'
+}
 
-    while True:
-        # Check to see if we should kill thread
-        if kill.is_set():
-            break
+############################################################################################
+# Thread that handles sending
+class Sender ( QtCore.QThread ):
+    lost_conn = QtCore.pyqtSignal()
 
-        try:
-            container = q_out.get_nowait()
-            data = container.SerializeToString()
-            with s_lock:
+    def __init__ ( self, s, s_lock, q_out, q_out_lock ):
+        QtCore.QThread.__init__( self )
+        self.s = s
+        self.s_lock = s_lock
+        self.q_out = q_out
+        self.q_out_lock = q_out_lock
+
+    def run ( self ):
+        print( 'Sender thread is running' )
+
+        while True:
+            # Check to see if we should kill thread
+            if self.isInterruptionRequested():
+                break
+
+            self.q_out_lock.lock()
+            if not self.q_out.empty():
+                container = self.q_out.get()
+                self.q_out_lock.unlock()
+                data = container.SerializeToString()
                 try:
-                    if not container.HasField( 'get_device_updates' ):
-                        print( 'Sending request:\n', container )
-                    s.sendall( data )
+                    self.s_lock.lock()
+                    self.s.sendall( data )
                     time.sleep( 0.05 )
 
-                except ConnectionAbortedError:
-                    kill.set()
-                    
-                except ConnectionResetError:
-                    kill.set()
+                except ( ConnectionAbortedError, ConnectionResetError, ConnectionRefusedError ):
+                    self.lost_conn.emit()
+                    break
 
-        except queue.Empty:
-            continue
+                finally:
+                    self.s_lock.unlock()
+            else:
+                self.q_out_lock.unlock()
 
-# Create the sender thread
-sender_thread = threading.Thread( target=sender, daemon=True )
-##############################################################
+        print( 'Sender thread shutting down' )
+############################################################################################
 
-##################################################################
-# Thread that handles receiving responses
-def receiver ():
-    print( 'Receiver thread is running' )
 
-    while True:
-        # Check to see if we should kill thread
-        if kill.is_set():
-            break
+############################################################################################
+# Thread that handles receiving
+class Receiver ( QtCore.QThread ):
+    lost_conn = QtCore.pyqtSignal()
+    server_alive = QtCore.pyqtSignal()
 
-        with s_lock:
+    def __init__ ( self, s, s_lock, q_in, q_in_lock ):
+        QtCore.QThread.__init__( self )
+        self.s = s
+        self.s_lock = s_lock
+        self.q_in = q_in
+        self.q_in_lock = q_in_lock
+
+    def run ( self ):
+        print( 'Receiver thread is running' )
+
+        while True:
+            # Check to see if we should kill thread
+            if self.isInterruptionRequested():
+                break
+
             try:
-                data = s.recv( 1024 )
+                self.s_lock.lock()
+                data = self.s.recv( 1024 )
                 if data:
                     try:
                         container = tool_shed.container()
                         container.ParseFromString( data )
-                        q_in.put( container )
+                        self.server_alive.emit()
+                        self.q_in_lock.lock()
+                        self.q_in.put( container )
+                        self.q_in_lock.unlock()
 
                     except DecodeError:
                         print( 'Was not able to parse message!' )
@@ -104,79 +127,194 @@ def receiver ():
             except BlockingIOError:
                 continue
 
-            except ConnectionAbortedError:
-                kill.set()
-                
-            except ConnectionResetError:
-                kill.set()
+            except ( ConnectionAbortedError, ConnectionResetError, ConnectionRefusedError ):
+                self.lost_conn.emit()
+                break
 
-# Create the receiver thread
-receiver_thread = threading.Thread( target=receiver, daemon=True )
-##################################################################
+            finally:
+                self.s_lock.unlock()
 
-####################################################################
-# Thread that handles queueing the heartbeat
-def heartbeat ():
-    time.sleep( 1 )
-    print( 'Heartbeat thread is running' )
+        print( 'Receiver thread shutting down' )
+############################################################################################
 
-    while True:
-        # Check to see if we should kill thread
-        if kill.is_set():
-            break
 
-        container = tool_shed.container()
-        container.get_device_updates = 1
-        q_out.put( container )
-        time.sleep( 1 )
-
-# Create the heartbeat thread
-heartbeat_thread = threading.Thread( target=heartbeat, daemon=True )
-####################################################################
-
+#######################################################################################################
 # Create QtThread that will update the GUI
 class UpdateMonitor ( QtCore.QThread ):
     device_update_signal = QtCore.pyqtSignal( [ int, bool ] )
     print_info_signal = QtCore.pyqtSignal( [ str ] )
+    save_schedule = QtCore.pyqtSignal( [ list ] )
+
+    def __init__ ( self, q_in, q_in_lock ):
+        QtCore.QThread.__init__( self )
+        self.q_in = q_in
+        self.q_in_lock = q_in_lock
 
     def run ( self ):
+        print( 'Updater monitor thread is running' )
+
         while True:
-            container = q_in.get()
-            
-            if container.HasField( 'all_device_updates' ):
-                for dev_update in container.all_device_updates.updates:
-                    self.device_update_signal.emit( dev_update.device, dev_update.status )
+            # Check to see if we should kill thread
+            if self.isInterruptionRequested():
+                break
 
-            elif container.HasField( 'next_watering_time' ):
-                dt = datetime.fromtimestamp( container.next_watering_time.timestamp.seconds )
-                td = timedelta( seconds=container.next_watering_time.duration.seconds )
-                msg = 'Next watering scheduled for ' + str( td ) + ' at ' + str( dt ) + ', scheduled daily: ' + str( container.next_watering_time.daily )
-                self.print_info_signal.emit( msg )
+            self.q_in_lock.lock()
+            if not self.q_in.empty():
+                container = self.q_in.get()
+                self.q_in_lock.unlock()
+                
+                if container.HasField( 'all_device_updates' ):
+                    for dev_update in container.all_device_updates.updates:
+                        self.device_update_signal.emit( dev_update.device, dev_update.status )
 
-            elif container.HasField( 'all_watering_times' ):
-                self.print_info_signal.emit( 'WATERING SCHEDULE:' )
-                watering_times = [ x for x in container.all_watering_times.times ]
-                watering_times.sort( key=lambda x:x.timestamp.seconds )
-                for watering_time in watering_times:
-                    dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
-                    td = timedelta( seconds=watering_time.duration.seconds )
-                    msg = 'Watering scheduled for ' + str( td ) + ' at ' + str( dt ) + ', scheduled daily: ' + str( watering_time.daily )
+                elif container.HasField( 'next_watering_time' ):
+                    dt = datetime.fromtimestamp( container.next_watering_time.timestamp.seconds )
+                    td = timedelta( seconds=container.next_watering_time.duration.seconds )
+                    msg = 'Next watering scheduled for ' + str( td ) + ' at ' + str( dt ) + ', scheduled daily: ' + str( container.next_watering_time.daily )
                     self.print_info_signal.emit( msg )
 
-            elif container.HasField( 'no_watering_times' ):
-                self.print_info_signal.emit( 'No watering times scheduled!' )
+                elif container.HasField( 'all_watering_times' ):
+                    self.print_info_signal.emit( 'WATERING SCHEDULE:' )
+                    watering_times = [ x for x in container.all_watering_times.times ]
+                    self.save_schedule.emit( watering_times )
+                    watering_times.sort( key=lambda x:x.timestamp.seconds )
+                    for watering_time in watering_times:
+                        dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+                        td = timedelta( seconds=watering_time.duration.seconds )
+                        msg = ''
+                        if watering_time.daily:
+                            msg = msg + 'DAILY AT ' + str( dt.strftime( '%H:%M' ) ) + ' FOR ' + str( td.seconds // 60 ) + ' minute' + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
+                        elif watering_time.weekly:
+                            msg = msg + 'WEEKLY ON ' + day_map[ dt.date().weekday() ] + 'S AT ' + str( dt.strftime( '%H:%M' ) ) + ' FOR ' + str( td.seconds // 60 ) + ' minute'  + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
+                        else:
+                            msg = 'Watering scheduled for ' + str( td ) + ' at ' + str( dt )
+                        self.print_info_signal.emit( msg )
 
-            elif container.HasField( 'logs' ):
-                if container.logs == '':
-                    self.print_info_signal.emit( 'No logs!' )
-                else:
-                    self.print_info_signal.emit( 'LOGS:' )
-                    self.print_info_signal.emit( container.logs[ :-1 ] )
+                elif container.HasField( 'no_watering_times' ):
+                    self.save_schedule.emit( [] )
+                    self.print_info_signal.emit( 'No watering times scheduled!' )
+
+                elif container.HasField( 'logs' ):
+                    if container.logs == '':
+                        self.print_info_signal.emit( 'No logs!' )
+                    else:
+                        self.print_info_signal.emit( 'LOGS:' )
+                        self.print_info_signal.emit( container.logs[ :-1 ] )
+
+            else:
+                self.q_in_lock.unlock()
+
+        print( 'The update monitor thread is shutting down' )
+#######################################################################################################
+
+
+############################################################
+# Clickable label, used for secret demo mode sensor toggling
+class QClickableLabel( QtWidgets.QLabel ):
+    clicked = QtCore.pyqtSignal()
+
+    def __init__ ( self, parent ):
+        QtWidgets.QLabel.__init__( self, parent )
+
+    def mousePressEvent( self, event ):
+        self.clicked.emit()
+############################################################
+
+
+############################################################################################
+# Paintable label, used for painting days that have events
+class QPaintableCalendarWidget( QtWidgets.QCalendarWidget ):
+    print_info_signal = QtCore.pyqtSignal( [ str ] )
+    schedule = []
+
+    def __init__ ( self, parent ):
+        QtWidgets.QCalendarWidget.__init__( self, parent )
+
+    def set_schedule ( self, schedule ):
+        self.schedule = schedule.copy()
+        self.updateCells()
+
+    def check_day( self, date ):
+        dt_today = datetime.today()
+        dt_clicked = datetime( year=date.year(), month=date.month(), day=date.day() )
+        dt_clicked_date = dt_clicked.date()
+        if dt_clicked_date >= dt_today.date() and self.schedule:
+            time_list = []
+            for watering_time in self.schedule:
+                dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+                td = timedelta( seconds=watering_time.duration.seconds )
+                if dt_clicked_date >= dt.date():
+                    if watering_time.weekly and dt.date().weekday() == ( date.dayOfWeek() - 1 ):
+                        time_list.append( ( dt.time(), td.seconds ) )
+                    elif watering_time.daily:
+                        time_list.append( ( dt.time(), td.seconds ) )
+                    elif dt.date() == dt_clicked.date():
+                        time_list.append( ( dt.time(), td.seconds ) )
+            
+            if time_list:
+                time_list.sort()
+                self.print_info_signal.emit( 'WATERING SCHEDULE for ' + str( dt_clicked.date() ) + ':' )
+                for time in time_list:
+                    self.print_info_signal.emit( str( time[0].strftime( '%H:%M' ) ) + ' FOR ' + str( time[1] // 60 ) + ' minute' + ( 's' if time[1] // 60 > 1 else '' ) )
+
+    def paintCell ( self, painter, rect, date ):
+        dt_today = datetime.today()
+        dt_painting = datetime( year=date.year(), month=date.month(), day=date.day() )
+        dt_painting_date = dt_painting.date()
+        super().paintCell( painter, rect, date )
+        if dt_painting_date >= dt_today.date() and self.schedule:
+            bg_color = QtGui.QColor( 'blue' )
+            bg_color.setAlpha( 64 )
+            bg_color_dark = QtGui.QColor( 'darkBlue' )
+            bg_color_dark.setAlpha( 128 )
+            painter.save()
+            overrode = False
+            num_of_watering_events = 0
+            for watering_time in self.schedule:
+                dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+                if dt_painting_date >= dt.date():
+                    if watering_time.weekly and dt.date().weekday() == ( date.dayOfWeek() - 1 ):
+                        if dt_painting_date == dt.date():
+                            overrode = True
+                            super().paintCell( painter, rect, date )
+                            painter.fillRect( rect, bg_color_dark )
+                        elif not overrode:
+                            overrode = True
+                            painter.fillRect( rect, bg_color )
+                        num_of_watering_events = num_of_watering_events + 1
+                    elif watering_time.daily:
+                        if dt_painting_date == dt.date():
+                            overrode = True
+                            super().paintCell( painter, rect, date )
+                            painter.fillRect( rect, bg_color_dark )
+                        if not overrode:
+                            overrode = True
+                            painter.fillRect( rect, bg_color )
+                        num_of_watering_events = num_of_watering_events + 1
+                    elif dt.date() == dt_painting.date():
+                        if dt_painting_date == dt.date():
+                            overrode = True
+                            super().paintCell( painter, rect, date )
+                            painter.fillRect( rect, bg_color_dark )
+                        if not overrode:
+                            overrode = True
+                            painter.fillRect( rect, bg_color )
+                        num_of_watering_events = num_of_watering_events + 1
+            if num_of_watering_events:
+                font = painter.font()
+                font.setPointSize( 5 * font.pointSize() // 6 )
+                font.setBold( True )
+                font.setItalic( True )
+                painter.setFont( font )
+                painter.drawText( rect, 0, 'x' + str( num_of_watering_events ) )
+            painter.restore()
+############################################################################################
+
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(669, 723)
+        MainWindow.resize(639, 731)
         MainWindow.setTabShape(QtWidgets.QTabWidget.TabShape.Triangular)
         MainWindow.setUnifiedTitleAndToolBarOnMac(True)
         self.centralwidget = QtWidgets.QWidget(parent=MainWindow)
@@ -222,12 +360,11 @@ class Ui_MainWindow(object):
         self.gridLayout_2.addWidget(self.lbl_port, 2, 1, 1, 1)
         self.txt_port = QtWidgets.QLineEdit(parent=self.gb_connection)
         self.txt_port.setMaximumSize(QtCore.QSize(100, 16777215))
-        self.txt_port.setText(str( PORT ))
         self.txt_port.setObjectName("txt_port")
         self.gridLayout_2.addWidget(self.txt_port, 2, 2, 1, 1)
         self.txt_host = QtWidgets.QLineEdit(parent=self.gb_connection)
         self.txt_host.setMaximumSize(QtCore.QSize(100, 16777215))
-        self.txt_host.setText(HOST)
+        self.txt_host.setText("")
         self.txt_host.setObjectName("txt_host")
         self.gridLayout_2.addWidget(self.txt_host, 0, 2, 1, 1)
         self.btn_connect = QtWidgets.QPushButton(parent=self.gb_connection)
@@ -251,10 +388,19 @@ class Ui_MainWindow(object):
         self.line_6.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
         self.line_6.setObjectName("line_6")
         self.verticalLayout_4.addWidget(self.line_6)
+        self.horizontalLayout_5 = QtWidgets.QHBoxLayout()
+        self.horizontalLayout_5.setObjectName("horizontalLayout_5")
+        self.cb_sched_weekly = QtWidgets.QCheckBox(parent=self.gb_sched)
+        self.cb_sched_weekly.setChecked(False)
+        self.cb_sched_weekly.setAutoExclusive(False)
+        self.cb_sched_weekly.setObjectName("cb_sched_weekly")
+        self.horizontalLayout_5.addWidget(self.cb_sched_weekly)
         self.cb_sched_daily = QtWidgets.QCheckBox(parent=self.gb_sched)
-        self.cb_sched_daily.setChecked(True)
+        self.cb_sched_daily.setChecked(False)
+        self.cb_sched_daily.setAutoExclusive(False)
         self.cb_sched_daily.setObjectName("cb_sched_daily")
-        self.verticalLayout_4.addWidget(self.cb_sched_daily)
+        self.horizontalLayout_5.addWidget(self.cb_sched_daily)
+        self.verticalLayout_4.addLayout(self.horizontalLayout_5)
         self.de_sched = QtWidgets.QDateEdit(parent=self.gb_sched)
         self.de_sched.setObjectName("de_sched")
         self.verticalLayout_4.addWidget(self.de_sched)
@@ -302,7 +448,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_2.addWidget(self.lbl_water_dur_units)
         self.cb_water_dur = QtWidgets.QCheckBox(parent=self.widget_3)
         self.cb_water_dur.setText("")
-        self.cb_water_dur.setChecked(True)
+        self.cb_water_dur.setChecked(False)
         self.cb_water_dur.setObjectName("cb_water_dur")
         self.horizontalLayout_2.addWidget(self.cb_water_dur)
         self.verticalLayout_2.addWidget(self.widget_3)
@@ -335,7 +481,7 @@ class Ui_MainWindow(object):
         self.horizontalLayout_4.addWidget(self.lbl_pump_dur_units)
         self.cb_pump_dur = QtWidgets.QCheckBox(parent=self.widget_4)
         self.cb_pump_dur.setText("")
-        self.cb_pump_dur.setChecked(True)
+        self.cb_pump_dur.setChecked(False)
         self.cb_pump_dur.setObjectName("cb_pump_dur")
         self.horizontalLayout_4.addWidget(self.cb_pump_dur)
         self.verticalLayout_5.addWidget(self.widget_4)
@@ -398,7 +544,7 @@ class Ui_MainWindow(object):
         self.lbl_valve_status = QtWidgets.QLabel(parent=self.widget)
         self.lbl_valve_status.setObjectName("lbl_valve_status")
         self.gridLayout_3.addWidget(self.lbl_valve_status, 2, 0, 1, 1)
-        self.lbl_tank_empty_disp = QtWidgets.QLabel(parent=self.widget)
+        self.lbl_tank_empty_disp = QClickableLabel(parent=self.widget)
         self.lbl_tank_empty_disp.setMinimumSize(QtCore.QSize(50, 0))
         self.lbl_tank_empty_disp.setObjectName("lbl_tank_empty_disp")
         self.gridLayout_3.addWidget(self.lbl_tank_empty_disp, 6, 1, 1, 1)
@@ -410,7 +556,7 @@ class Ui_MainWindow(object):
         self.line.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
         self.line.setObjectName("line")
         self.gridLayout_3.addWidget(self.line, 1, 0, 1, 2)
-        self.lbl_tank_full_disp = QtWidgets.QLabel(parent=self.widget)
+        self.lbl_tank_full_disp = QClickableLabel(parent=self.widget)
         self.lbl_tank_full_disp.setMinimumSize(QtCore.QSize(50, 0))
         self.lbl_tank_full_disp.setObjectName("lbl_tank_full_disp")
         self.gridLayout_3.addWidget(self.lbl_tank_full_disp, 4, 1, 1, 1)
@@ -419,11 +565,11 @@ class Ui_MainWindow(object):
         self.line_3.setFrameShadow(QtWidgets.QFrame.Shadow.Sunken)
         self.line_3.setObjectName("line_3")
         self.gridLayout_3.addWidget(self.line_3, 5, 0, 1, 2)
-        self.lbl_rain_disp = QtWidgets.QLabel(parent=self.widget)
+        self.lbl_rain_disp = QClickableLabel(parent=self.widget)
         self.lbl_rain_disp.setMinimumSize(QtCore.QSize(50, 0))
         self.lbl_rain_disp.setObjectName("lbl_rain_disp")
         self.gridLayout_3.addWidget(self.lbl_rain_disp, 10, 1, 1, 1)
-        self.lbl_well_empty_disp = QtWidgets.QLabel(parent=self.widget)
+        self.lbl_well_empty_disp = QClickableLabel(parent=self.widget)
         self.lbl_well_empty_disp.setMinimumSize(QtCore.QSize(50, 0))
         self.lbl_well_empty_disp.setObjectName("lbl_well_empty_disp")
         self.gridLayout_3.addWidget(self.lbl_well_empty_disp, 8, 1, 1, 1)
@@ -457,6 +603,18 @@ class Ui_MainWindow(object):
         self.gridLayout_3.addWidget(self.line_5, 9, 0, 1, 2)
         self.gridLayout.addWidget(self.widget, 1, 0, 1, 1)
         self.verticalLayout_6.addWidget(self.gb_status)
+        self.gb_calendar = QtWidgets.QGroupBox(parent=self.widget_status)
+        self.gb_calendar.setObjectName("gb_calendar")
+        self.verticalLayout_9 = QtWidgets.QVBoxLayout(self.gb_calendar)
+        self.verticalLayout_9.setObjectName("verticalLayout_9")
+        self.cw_schedule = QPaintableCalendarWidget(parent=self.gb_calendar)
+        self.cw_schedule.setGridVisible(True)
+        self.cw_schedule.setVerticalHeaderFormat(QtWidgets.QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader)
+        self.cw_schedule.setNavigationBarVisible(True)
+        self.cw_schedule.setDateEditEnabled(False)
+        self.cw_schedule.setObjectName("cw_schedule")
+        self.verticalLayout_9.addWidget(self.cw_schedule)
+        self.verticalLayout_6.addWidget(self.gb_calendar)
         self.gb_output = QtWidgets.QGroupBox(parent=self.widget_status)
         self.gb_output.setObjectName("gb_output")
         self.verticalLayout = QtWidgets.QVBoxLayout(self.gb_output)
@@ -466,7 +624,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollArea.setObjectName("scrollArea")
         self.scrollAreaWidgetContents = QtWidgets.QWidget()
-        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 486, 463))
+        self.scrollAreaWidgetContents.setGeometry(QtCore.QRect(0, 0, 453, 222))
         self.scrollAreaWidgetContents.setObjectName("scrollAreaWidgetContents")
         self.verticalLayout_7 = QtWidgets.QVBoxLayout(self.scrollAreaWidgetContents)
         self.verticalLayout_7.setContentsMargins(0, 0, 0, 0)
@@ -483,6 +641,8 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
+
+        print( self.cw_schedule.paintCell )
 
         # Create palettes used to color labels
         self.green = QtGui.QPalette()
@@ -509,16 +669,31 @@ class Ui_MainWindow(object):
         self.de_sched.setDate( date )
         self.te_sched.setTime( time )
 
+        # Set the HOST and PORT default text
+        self.txt_host.setText( HOST )
+        self.txt_port.setText( str( PORT ) )
+
         # Disable the control interfaces until we have a connection
         self.gb_watering.setEnabled( False )
         self.gb_pumping.setEnabled( False )
         self.gb_status.setEnabled( False )
+        self.gb_calendar.setEnabled( False )
         self.btn_log.setEnabled( False )
 
+        # Set up queues and queue locks
+        self.q_in = queue.Queue()
+        self.q_in_lock = QtCore.QMutex()
+        self.q_out = queue.Queue()
+        self.q_out_lock = QtCore.QMutex()
+
+        # Create comm lock
+        self.s_lock = QtCore.QMutex()
+
         # Set up thread to signal updates to GUI
-        self.updater = UpdateMonitor()
+        self.updater = UpdateMonitor( self.q_in, self.q_in_lock )
         self.updater.device_update_signal.connect( self.device_update )
         self.updater.print_info_signal.connect( self.text_output.append )
+        self.updater.save_schedule.connect( self.save_schedule )
         self.updater.start()
 
         # Connect connect button to slot
@@ -551,6 +726,40 @@ class Ui_MainWindow(object):
         # Connect peak event log button to slot
         self.btn_log.pressed.connect( self.peak_event_log )
 
+        # Make scheduling checkboxes self exclusive
+        self.cb_sched_daily.clicked.connect( lambda checked : self.cb_sched_weekly.setChecked( False ) if checked else None )
+        self.cb_sched_weekly.clicked.connect( lambda checked : self.cb_sched_daily.setChecked( False ) if checked else None )
+
+        # Sync calendar and date edit connection
+        self.de_sched.dateChanged.connect( self.sync_date_edit_onto_calendar )
+        self.cw_schedule.selectionChanged.connect( self.sync_calendar_onto_date_edit )
+
+        # Connect calendar enter signal
+        self.cw_schedule.activated.connect( self.cw_schedule.check_day )
+        self.cw_schedule.print_info_signal.connect( self.text_output.append )
+
+        # Set 24 hour format for time edit
+        self.te_sched.setDisplayFormat( 'HH:mm' )
+
+        # Set background color of navigation bar of calendar
+        self.cw_schedule.setStyleSheet( "QCalendarWidget  QWidget#qt_calendar_navigationbar"
+                                        "{"
+                                        "background-color : darkGray;"
+                                        "}"
+                                        "QCalendarWidget  QWidget# qt_calendar_navigationbar::hover"
+                                        "{"
+                                        "background-color : darkGray;"
+                                        "}" ) 
+
+        # Hook up sensor overrides if demo mode
+        if DEMO_MODE:
+            self.lbl_tank_full_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_TANK_FULL, self.lbl_tank_full_disp ) )
+            self.lbl_tank_empty_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_TANK_EMPTY, self.lbl_tank_empty_disp ) )
+            self.lbl_well_empty_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_WELL_EMPTY, self.lbl_well_empty_disp ) )
+            self.lbl_rain_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_RAIN, self.lbl_rain_disp ) )
+
+        self.about()
+
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "Remote Gardener"))
@@ -561,6 +770,7 @@ class Ui_MainWindow(object):
         self.gb_watering.setTitle(_translate("MainWindow", "Watering"))
         self.gb_sched.setTitle(_translate("MainWindow", "Scheduling"))
         self.btn_get_sched.setText(_translate("MainWindow", "Get Schedule"))
+        self.cb_sched_weekly.setText(_translate("MainWindow", "Weekly"))
         self.cb_sched_daily.setText(_translate("MainWindow", "Daily"))
         self.lbl_sched_dur.setText(_translate("MainWindow", "Duration:"))
         self.lbl_sched_dur_units.setText(_translate("MainWindow", "min"))
@@ -576,7 +786,7 @@ class Ui_MainWindow(object):
         self.btn_start_pump.setText(_translate("MainWindow", "Start"))
         self.btn_stop_pump.setText(_translate("MainWindow", "Stop"))
         self.gb_misc.setTitle(_translate("MainWindow", "Miscellaneous"))
-        self.btn_log.setText(_translate("MainWindow", "Peak Event Log"))
+        self.btn_log.setText(_translate("MainWindow", "Event Log"))
         self.btn_about.setText(_translate("MainWindow", "About"))
         self.gb_status.setTitle(_translate("MainWindow", "Status"))
         self.lbl_tank_empty.setText(_translate("MainWindow", "Tank empty sensor status:"))
@@ -591,6 +801,7 @@ class Ui_MainWindow(object):
         self.lbl_valve_status_disp.setText(_translate("MainWindow", "UNKNOWN"))
         self.lbl_pump_status.setText(_translate("MainWindow", "Pump status:"))
         self.lbl_rain.setText(_translate("MainWindow", "Rain sensor status:"))
+        self.gb_calendar.setTitle(_translate("MainWindow", "Schedule"))
         self.gb_output.setTitle(_translate("MainWindow", "Output"))
 
     def device_update ( self, device, status ):
@@ -601,40 +812,48 @@ class Ui_MainWindow(object):
             self.dev_map[ device ][ 1 ].setPalette( self.red )
 
     def connect ( self ):
-        global s
         try:
             host = self.txt_host.text()
             port = int( self.txt_port.text() )
-            s = socket.socket( socket.AF_INET, socket.SOCK_STREAM )
-            s.settimeout( 0.5 )
-            s.connect( ( host, port ) )
-            s.settimeout( None )
-            s.setblocking( 0 )
+            self.s = socket.socket( socket.AF_INET, socket.SOCK_STREAM )
+            self.s.settimeout( 0.5 )
+            self.s.connect( ( host, port ) )
+            self.s.settimeout( None )
+            self.s.setblocking( 0 )
+
+            # Create comm threads
+            self.sender = Sender( self.s, self.s_lock, self.q_out, self.q_out_lock )
+            self.receiver = Receiver( self.s, self.s_lock, self.q_in, self.q_in_lock )
+            self.heartbeat = QtCore.QTimer()
+            self.pulse_mon = QtCore.QTimer()
+            self.pulse_mon.setSingleShot( True )
+
+            # Connect signals for threads
+            self.sender.lost_conn.connect( self.disconnect )
+            self.receiver.lost_conn.connect( self.disconnect )
+            self.receiver.server_alive.connect( self.postpone_pulse_mon )
+            self.heartbeat.timeout.connect( self.get_device_updates )
+            self.pulse_mon.timeout.connect( self.disconnect )
+
+            # Start comms threads
+            self.sender.start()
+            self.receiver.start()
+            self.heartbeat.start( 250 )
+            self.pulse_mon.start( 5000 )
 
             # If none of that raised an exception then we connected
             self.gb_connection.setEnabled( False )
             self.gb_watering.setEnabled( True )
             self.gb_pumping.setEnabled( True )
             self.gb_status.setEnabled( True )
+            self.gb_calendar.setEnabled( True )
             self.btn_log.setEnabled( True )
 
-            # Start comms threads
-            sender_thread.start()
-            receiver_thread.start()
-            heartbeat_thread.start()
-
-            # Print about string
-            self.about()
-
             # Get device updates
-            container = tool_shed.container()
-            container.get_device_updates = 1
-            q_out.put( container )
+            self.get_device_updates()
 
             # Get watering schedule
-            container = tool_shed.container()
-            container.get_watering_times = 1
-            q_out.put( container )
+            self.get_schedule()
 
         except ValueError:
             self.text_output.append( 'Port is not an integer' )
@@ -642,16 +861,65 @@ class Ui_MainWindow(object):
         except TimeoutError:
             self.text_output.append( 'Failed to connect to host' )
 
+        except ConnectionRefusedError:
+            self.text_output.append( 'Connection was refused' )
+
+    def disconnect ( self ):
+        # Stop timers
+        self.heartbeat.stop()
+
+        # Request comms threads stop
+        self.sender.requestInterruption()
+        self.receiver.requestInterruption()
+
+        # Wait until they have stopped
+        self.sender.wait()
+        self.receiver.wait()
+
+        # Disabled the interfaces for the gardener and re-enable the connection menu
+        self.gb_connection.setEnabled( True )
+        self.gb_watering.setEnabled( False )
+        self.gb_pumping.setEnabled( False )
+        self.gb_status.setEnabled( False )
+        self.gb_calendar.setEnabled( False )
+        self.btn_log.setEnabled( False )
+
+        # Reset queues
+        def empty_queue ( q ):
+            while not q.empty():
+                try:
+                    q.get_nowait()
+                except queue.Empty:
+                    break
+        
+        self.q_in_lock.lock()
+        empty_queue( self.q_in )
+        self.q_in_lock.unlock()
+        self.q_out_lock.lock()
+        empty_queue( self.q_out )
+        self.q_out_lock.unlock()
+
+        # Shutdown and close connection, we
+        # don't have to use s_lock because
+        # we already joined sender_thread
+        self.s.close()
+
     def about ( self ):
         self.text_output.append( ABOUT_STR )
+
+    def get_device_updates ( self ):
+        container = tool_shed.container()
+        container.get_device_updates = 1
+        self.q_out_enqueue( container )
 
     def get_schedule ( self ):
         container = tool_shed.container()
         container.get_watering_times = 1
-        q_out.put( container )
+        self.q_out_enqueue( container )
 
     def schedule_watering ( self ):
         daily = self.cb_sched_daily.isChecked()
+        weekly = self.cb_sched_weekly.isChecked()
         date = self.de_sched.date()
         time = self.te_sched.time()
         duration = self.sb_sched_dur.value()
@@ -660,12 +928,16 @@ class Ui_MainWindow(object):
         container = tool_shed.container()
         container.set_watering_time.timestamp.seconds = int( dt.timestamp() )
         container.set_watering_time.duration.FromTimedelta( td )
-        container.set_watering_time.daily = daily
-        q_out.put( container )
+        if daily:
+            container.set_watering_time.daily = daily
+        elif weekly:
+            container.set_watering_time.weekly = weekly
+        self.q_out_enqueue( container )
         self.get_schedule()
 
     def unschedule_watering ( self ):
         daily = self.cb_sched_daily.isChecked()
+        weekly = self.cb_sched_weekly.isChecked()
         date = self.de_sched.date()
         time = self.te_sched.time()
         duration = self.sb_sched_dur.value()
@@ -674,8 +946,11 @@ class Ui_MainWindow(object):
         container = tool_shed.container()
         container.cancel_watering_time.timestamp.seconds = int( dt.timestamp() )
         container.cancel_watering_time.duration.FromTimedelta( td )
-        container.cancel_watering_time.daily = daily
-        q_out.put( container )
+        if daily:
+            container.cancel_watering_time.daily = daily
+        elif weekly:
+            container.cancel_watering_time.weekly = weekly
+        self.q_out_enqueue( container )
         self.get_schedule()
 
     def start_watering ( self ):
@@ -683,32 +958,71 @@ class Ui_MainWindow(object):
         td = timedelta( minutes=duration )
         container = tool_shed.container()
         container.water_now.duration.FromTimedelta( td )
-        q_out.put( container )
+        self.q_out_enqueue( container )
 
     def stop_watering ( self ):
         container = tool_shed.container()
         container.stop_watering = 1
-        q_out.put( container )
+        self.q_out_enqueue( container )
 
     def start_pumping ( self ):
         duration = self.sb_pump_dur.value() if self.cb_pump_dur.isChecked() else 0
         td = timedelta( minutes=duration )
         container = tool_shed.container()
         container.pump_now.duration.FromTimedelta( td )
-        q_out.put( container )
+        self.q_out_enqueue( container )
 
     def stop_pumping ( self ):
         container = tool_shed.container()
         container.stop_pumping = 1
-        q_out.put( container )
+        self.q_out_enqueue( container )
 
     def peak_event_log ( self ):
         container = tool_shed.container()
         container.peak_event_log = 10
-        q_out.put( container )
+        self.q_out_enqueue( container )
+
+    def toggle_sensor( self, sensor, lbl ):
+        status = None
+        if lbl.text() == 'ACTIVE':
+            status = False
+        elif lbl.text() == 'INACTIVE':
+            status = True
+        else:
+            return
+            
+        container = tool_shed.container()
+        container.sensor_override.device = sensor
+        container.sensor_override.status = status
+        self.q_out_enqueue( container )
+
+    def save_schedule ( self, schedule ):
+        self.cw_schedule.set_schedule( schedule )
+
+    def q_out_enqueue ( self, container ):
+        self.q_out_lock.lock()
+        self.q_out.put( container )
+        self.q_out_lock.unlock()
+
+    def postpone_pulse_mon ( self ):
+        if self.pulse_mon.isActive():
+            self.pulse_mon.start( 5000 )
+
+    def sync_date_edit_onto_calendar ( self ):
+        de_date = self.de_sched.date()
+        cw_date = self.cw_schedule.selectedDate()
+        if de_date != cw_date:
+            self.cw_schedule.setSelectedDate( de_date )
+
+    def sync_calendar_onto_date_edit ( self ):
+        de_date = self.de_sched.date()
+        cw_date = self.cw_schedule.selectedDate()
+        if de_date != cw_date:
+            self.de_sched.setDate( cw_date )
 
 
 if __name__ == "__main__":
+    import sys
     app = QtWidgets.QApplication(sys.argv)
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()

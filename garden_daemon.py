@@ -20,7 +20,7 @@ from datetime import timedelta
 from datetime import datetime
 
 # Important constant
-VERSION = 'mp0.5'
+VERSION = 'mp0.6'
 HOST = 'localhost'
 PORT = 50007
 WATERING_SCHEDULE_FILE_NAME = 'watering.json'
@@ -36,11 +36,9 @@ def gardener( q_in, q_out, kill ):
 	print( 'PID:', getpid() )
 
 	# Keep track of origin of current watering event
-	# WARNING: ONLY TO BE USED IN GARDENER THREAD
 	watering_timestamp = 0
 
 	# Keep track of origin of current pumping event
-	# WARNING: ONLY TO BE USED IN GARDENER THREAD
 	pumping_timestamp = 0
 
 	# Create watering queue
@@ -137,6 +135,15 @@ def gardener( q_in, q_out, kill ):
 					dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
 					td = dt_now - dt
 					td = timedelta( days=td.days ) + timedelta( days=1 )
+					dt = dt + td
+					watering_time.timestamp.seconds = int( dt.timestamp() )
+					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
+
+				# Expired but weekly, schedule new watering time
+				elif watering_time.weekly:
+					dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+					td = dt_now - dt
+					td = timedelta( days=td.weeks ) + timedelta( weeks=1 )
 					dt = dt + td
 					watering_time.timestamp.seconds = int( dt.timestamp() )
 					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
@@ -263,10 +270,16 @@ def gardener( q_in, q_out, kill ):
 					# Create timer to expire after the duration of the watering event
 					threading.Timer( interval=watering_time.duration.seconds, function=stop_watering_guarded, args=[ seconds ] ).start()
 				
-				# Schedule watering event for same time tomorrow if daily
+				# Reschedule watering event if daily or weekly
 				if watering_time.daily:
 					dt = datetime.fromtimestamp( seconds )
 					dt = dt + timedelta( days=1 )
+					watering_time.timestamp.seconds = int( dt.timestamp() )
+					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
+
+				elif watering_time.weekly:
+					dt = datetime.fromtimestamp( seconds )
+					dt = dt + timedelta( weeks=1 )
 					watering_time.timestamp.seconds = int( dt.timestamp() )
 					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
 
@@ -389,6 +402,8 @@ def gardener( q_in, q_out, kill ):
 				# Check if any watering events are queued
 				if q_water:
 					# Get time of day we are cancelling
+					daily_cancel = container.cancel_watering_time.daily
+					weekly_cancel = container.cancel_watering_time.weekly
 					dt_cancel = datetime.fromtimestamp( container.cancel_watering_time.timestamp.seconds )
 
 					# Create new version of queue
@@ -396,8 +411,16 @@ def gardener( q_in, q_out, kill ):
 					
 					# Copy over non-cancelled watering times
 					for seconds, watering_time in q_water:
+						daily = watering_time.daily
+						weekly = watering_time.weekly
 						dt = datetime.fromtimestamp( seconds )
-						if dt.hour != dt_cancel.hour or dt.minute != dt_cancel.minute:
+						if daily_cancel and daily and dt.hour == dt_cancel.hour and dt.minute == dt_cancel.minute:
+							continue
+						elif weekly_cancel and weekly and dt.hour == dt_cancel.hour and dt.minute == dt_cancel.minute and dt.date().weekday() == dt_cancel.date().weekday():
+							continue
+						elif not daily_cancel and not weekly_cancel and dt == dt_cancel:
+							continue
+						else:
 							heapq.heappush( q_water_new, ( seconds, watering_time ) )
 
 					# Copy over to old queue
@@ -469,7 +492,7 @@ if __name__ == '__main__':
 	kill = mp.Event()
 
 	# Turn on the gardener process
-	gardener_process = mp.Process( target=gardener, daemon=True, args=( q_in, q_out, kill ) )
+	gardener_process = mp.Process( target=gardener, daemon=True, args=( q_in, q_out, kill ), name='gardener_process' )
 	gardener_process.start()
 	###############################################################################
 
@@ -479,7 +502,13 @@ if __name__ == '__main__':
 	lost_conn = threading.Event()
 
 	with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
-		s.bind( ( HOST, PORT ) )
+		print( 'Attempting to bind socket' )
+		while True:
+			try:
+				s.bind( ( HOST, PORT ) )
+				break
+			except OSError:
+				continue
 		print( 'Socket is bound to:' )
 		print( s.getsockname() )
 		s.listen( 1 )
