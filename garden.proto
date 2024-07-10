@@ -10,29 +10,19 @@ message container {
 		DEV_UNK = 0;
 		DEV_ACT_PUMP = 1;
 		DEV_ACT_VALVE = 2;
-		DEV_SNS_WATER_LVL_HIGH = 3;
-		DEV_SNS_WATER_LVL_LOW = 4;
-	}
-	
-	enum device_status {
-		STAT_UNK = 0;
-		STAT_ACT_ON = 1;
-		STAT_ACT_OFF = 2;
-		STAT_SNS_ACTIVE = 3;
-		STAT_SNS_INACTIVE = 4;
+		DEV_SNS_TANK_FULL = 3;
+		DEV_SNS_TANK_EMPTY = 4;
+		DEV_SNS_WELL_EMPTY = 5;
+		DEV_SNS_RAIN = 6;
 	}
 
 	message device_update {
 		devices device = 1;
-		device_status status = 2;
+		bool status = 2;
 	}
 
-	message device_update_request {
-		devices device = 1;
-	}
-
-	message water_now {
-		google.protobuf.Duration interval = 1;
+	message device_updates {
+		repeated device_update updates = 1;
 	}
 
 	message watering_time {
@@ -45,16 +35,23 @@ message container {
 		repeated watering_time times = 1;
 	}
 
+	message pump {
+		google.protobuf.Duration duration = 1;
+	}
+
 	oneof contents {
 		int32 heartbeat = 1;
-		device_update update = 2;
-		device_update_request update_rqst = 3;
+		device_updates all_device_updates = 2;
+		int32 get_device_updates = 3;
 		watering_time set_watering_time = 4;
 		int32 get_watering_times = 5;
 		int32 get_next_watering_time = 6;
-		water_now water = 7;
+		watering_time water_now = 7;
 		int32 stop_watering = 8;
 		watering_time next_watering_time = 9;
 		watering_times all_watering_times = 10;
+		watering_time cancel_watering_time = 11;
+		pump pump_now = 12;
+		int32 stop_pumping = 13;
 	}
 }

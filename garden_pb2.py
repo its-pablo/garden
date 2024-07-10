@@ -26,7 +26,7 @@ from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__
 from google.protobuf import duration_pb2 as google_dot_protobuf_dot_duration__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cgarden.proto\x12\x06garden\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\"\xee\x08\n\tcontainer\x12\x13\n\theartbeat\x18\x01 \x01(\x05H\x00\x12\x31\n\x06update\x18\x02 \x01(\x0b\x32\x1f.garden.container.device_updateH\x00\x12>\n\x0bupdate_rqst\x18\x03 \x01(\x0b\x32\'.garden.container.device_update_requestH\x00\x12<\n\x11set_watering_time\x18\x04 \x01(\x0b\x32\x1f.garden.container.watering_timeH\x00\x12\x1c\n\x12get_watering_times\x18\x05 \x01(\x05H\x00\x12 \n\x16get_next_watering_time\x18\x06 \x01(\x05H\x00\x12,\n\x05water\x18\x07 \x01(\x0b\x32\x1b.garden.container.water_nowH\x00\x12\x17\n\rstop_watering\x18\x08 \x01(\x05H\x00\x12=\n\x12next_watering_time\x18\t \x01(\x0b\x32\x1f.garden.container.watering_timeH\x00\x12>\n\x12\x61ll_watering_times\x18\n \x01(\x0b\x32 .garden.container.watering_timesH\x00\x1ak\n\rdevice_update\x12)\n\x06\x64\x65vice\x18\x01 \x01(\x0e\x32\x19.garden.container.devices\x12/\n\x06status\x18\x02 \x01(\x0e\x32\x1f.garden.container.device_status\x1a\x42\n\x15\x64\x65vice_update_request\x12)\n\x06\x64\x65vice\x18\x01 \x01(\x0e\x32\x19.garden.container.devices\x1a\x38\n\twater_now\x12+\n\x08interval\x18\x01 \x01(\x0b\x32\x19.google.protobuf.Duration\x1az\n\rwatering_time\x12-\n\ttimestamp\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12+\n\x08\x64uration\x18\x02 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\r\n\x05\x64\x61ily\x18\x03 \x01(\x08\x1a@\n\x0ewatering_times\x12.\n\x05times\x18\x01 \x03(\x0b\x32\x1f.garden.container.watering_time\"r\n\x07\x64\x65vices\x12\x0b\n\x07\x44\x45V_UNK\x10\x00\x12\x10\n\x0c\x44\x45V_ACT_PUMP\x10\x01\x12\x11\n\rDEV_ACT_VALVE\x10\x02\x12\x1a\n\x16\x44\x45V_SNS_WATER_LVL_HIGH\x10\x03\x12\x19\n\x15\x44\x45V_SNS_WATER_LVL_LOW\x10\x04\"l\n\rdevice_status\x12\x0c\n\x08STAT_UNK\x10\x00\x12\x0f\n\x0bSTAT_ACT_ON\x10\x01\x12\x10\n\x0cSTAT_ACT_OFF\x10\x02\x12\x13\n\x0fSTAT_SNS_ACTIVE\x10\x03\x12\x15\n\x11STAT_SNS_INACTIVE\x10\x04\x42\n\n\x08\x63ontentsb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0cgarden.proto\x12\x06garden\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1egoogle/protobuf/duration.proto\"\xf5\x08\n\tcontainer\x12\x13\n\theartbeat\x18\x01 \x01(\x05H\x00\x12>\n\x12\x61ll_device_updates\x18\x02 \x01(\x0b\x32 .garden.container.device_updatesH\x00\x12\x1c\n\x12get_device_updates\x18\x03 \x01(\x05H\x00\x12<\n\x11set_watering_time\x18\x04 \x01(\x0b\x32\x1f.garden.container.watering_timeH\x00\x12\x1c\n\x12get_watering_times\x18\x05 \x01(\x05H\x00\x12 \n\x16get_next_watering_time\x18\x06 \x01(\x05H\x00\x12\x34\n\twater_now\x18\x07 \x01(\x0b\x32\x1f.garden.container.watering_timeH\x00\x12\x17\n\rstop_watering\x18\x08 \x01(\x05H\x00\x12=\n\x12next_watering_time\x18\t \x01(\x0b\x32\x1f.garden.container.watering_timeH\x00\x12>\n\x12\x61ll_watering_times\x18\n \x01(\x0b\x32 .garden.container.watering_timesH\x00\x12?\n\x14\x63\x61ncel_watering_time\x18\x0b \x01(\x0b\x32\x1f.garden.container.watering_timeH\x00\x12*\n\x08pump_now\x18\x0c \x01(\x0b\x32\x16.garden.container.pumpH\x00\x12\x16\n\x0cstop_pumping\x18\r \x01(\x05H\x00\x1aJ\n\rdevice_update\x12)\n\x06\x64\x65vice\x18\x01 \x01(\x0e\x32\x19.garden.container.devices\x12\x0e\n\x06status\x18\x02 \x01(\x08\x1a\x42\n\x0e\x64\x65vice_updates\x12\x30\n\x07updates\x18\x01 \x03(\x0b\x32\x1f.garden.container.device_update\x1az\n\rwatering_time\x12-\n\ttimestamp\x18\x01 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12+\n\x08\x64uration\x18\x02 \x01(\x0b\x32\x19.google.protobuf.Duration\x12\r\n\x05\x64\x61ily\x18\x03 \x01(\x08\x1a@\n\x0ewatering_times\x12.\n\x05times\x18\x01 \x03(\x0b\x32\x1f.garden.container.watering_time\x1a\x33\n\x04pump\x12+\n\x08\x64uration\x18\x01 \x01(\x0b\x32\x19.google.protobuf.Duration\"\x94\x01\n\x07\x64\x65vices\x12\x0b\n\x07\x44\x45V_UNK\x10\x00\x12\x10\n\x0c\x44\x45V_ACT_PUMP\x10\x01\x12\x11\n\rDEV_ACT_VALVE\x10\x02\x12\x15\n\x11\x44\x45V_SNS_TANK_FULL\x10\x03\x12\x16\n\x12\x44\x45V_SNS_TANK_EMPTY\x10\x04\x12\x16\n\x12\x44\x45V_SNS_WELL_EMPTY\x10\x05\x12\x10\n\x0c\x44\x45V_SNS_RAIN\x10\x06\x42\n\n\x08\x63ontentsb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -34,19 +34,17 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'garden_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_CONTAINER']._serialized_start=90
-  _globals['_CONTAINER']._serialized_end=1224
-  _globals['_CONTAINER_DEVICE_UPDATE']._serialized_start=563
-  _globals['_CONTAINER_DEVICE_UPDATE']._serialized_end=670
-  _globals['_CONTAINER_DEVICE_UPDATE_REQUEST']._serialized_start=672
-  _globals['_CONTAINER_DEVICE_UPDATE_REQUEST']._serialized_end=738
-  _globals['_CONTAINER_WATER_NOW']._serialized_start=740
-  _globals['_CONTAINER_WATER_NOW']._serialized_end=796
-  _globals['_CONTAINER_WATERING_TIME']._serialized_start=798
-  _globals['_CONTAINER_WATERING_TIME']._serialized_end=920
-  _globals['_CONTAINER_WATERING_TIMES']._serialized_start=922
-  _globals['_CONTAINER_WATERING_TIMES']._serialized_end=986
-  _globals['_CONTAINER_DEVICES']._serialized_start=988
-  _globals['_CONTAINER_DEVICES']._serialized_end=1102
-  _globals['_CONTAINER_DEVICE_STATUS']._serialized_start=1104
-  _globals['_CONTAINER_DEVICE_STATUS']._serialized_end=1212
+  _globals['_CONTAINER']._serialized_end=1231
+  _globals['_CONTAINER_DEVICE_UPDATE']._serialized_start=683
+  _globals['_CONTAINER_DEVICE_UPDATE']._serialized_end=757
+  _globals['_CONTAINER_DEVICE_UPDATES']._serialized_start=759
+  _globals['_CONTAINER_DEVICE_UPDATES']._serialized_end=825
+  _globals['_CONTAINER_WATERING_TIME']._serialized_start=827
+  _globals['_CONTAINER_WATERING_TIME']._serialized_end=949
+  _globals['_CONTAINER_WATERING_TIMES']._serialized_start=951
+  _globals['_CONTAINER_WATERING_TIMES']._serialized_end=1015
+  _globals['_CONTAINER_PUMP']._serialized_start=1017
+  _globals['_CONTAINER_PUMP']._serialized_end=1068
+  _globals['_CONTAINER_DEVICES']._serialized_start=1071
+  _globals['_CONTAINER_DEVICES']._serialized_end=1219
 # @@protoc_insertion_point(module_scope)
