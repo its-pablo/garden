@@ -1,7 +1,5 @@
 #!/usr/bin/python3
 
-print( 'remote_gardener is now running!' )
-
 # Imports
 import time
 import threading
@@ -27,6 +25,10 @@ kill = threading.Event()
 s_lock = threading.Lock()
 HOST = 'localhost'
 PORT = 50007
+VERSION = '0.1'
+
+print( 'remote_gardener_cmd version', VERSION, 'is now running!' )
+
 with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 	s.connect( ( HOST, PORT ) )
 	s.setblocking( 0 )
@@ -292,7 +294,7 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 					container = None
 				else:
 					container.sensor_override.device = sns_list[ sensor ]
-					container.sensor_override.status =  ( status != 0 )
+					container.sensor_override.status = ( status != 0 )
 
 			# Secret option: shutdown daemon
 			elif choice == -2:
