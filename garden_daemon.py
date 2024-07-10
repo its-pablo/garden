@@ -155,7 +155,7 @@ def gardener( q_in, q_out, kill ):
 					td = dt_now - dt
 					num_periods = td // td_period
 					num_periods = num_periods + 1
-					dt = dt + ( td_period + num_periods )
+					dt = dt + ( td_period * num_periods )
 					watering_time.timestamp.seconds = int( dt.timestamp() )
 					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
 		
