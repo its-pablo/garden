@@ -23,7 +23,7 @@ garden_daemon.py:
   - The main process is in charge of sending and receiving messages specified in garden.proto.
   - The gardener process is in charge of handling requests and running routine garden tasks (checking sensors and toggling the pump/valve as needed, etc).
 
-![Pump and Valve simple state machines](https://github.com/its-pablo/garden/blob/main/diagrams/pump_valve_state_machine.png)
+    ![Pump and Valve simple state machines](https://github.com/its-pablo/garden/blob/main/diagrams/pump_valve_state_machine.png)
 
 remote_gardener_cmd.py:
   - A terminal version of the client. Has secret options -1 and -2. -1 allows you to toggle the state of a sensor when using the dummy_gpiozero classes. -2 allows you to shutdown the garden_daemon.py server.
