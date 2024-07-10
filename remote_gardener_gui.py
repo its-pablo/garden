@@ -61,18 +61,32 @@ def is_watering_scheduled ( date_to_check, schedule ):
         td_period = timedelta( seconds=watering_time.period.seconds )
         # Is this watering time not expired?
         if dt >= dt_today:
+            td_0 = timedelta()
             # Is this watering time on the date to check?
             if date_to_check == dt_date:
                 times.append( watering_time )
                 origin = True
-            elif date_to_check > dt_date:
+            elif date_to_check > dt_date and td_period > td_0:
                 td_between = date_to_check - dt_date
-                td_0 = timedelta()
                 # Check if time between events a multiple of the period
                 if td_between % td_period == td_0:
                     times.append( watering_time )
 
     return ( times, origin )
+
+def are_schedules_same ( schedule_a, schedule_b ):
+    if ( schedule_a is None and schedule_b is not None ) or ( schedule_a is not None and schedule_b is None ):
+        return False
+    if schedule_a is None and schedule_b is None:
+        return True
+    for wt_a, wt_b in zip( schedule_a, schedule_b ):
+        if wt_a.timestamp.seconds != wt_b.timestamp.seconds:
+            return False
+        elif wt_a.duration.seconds != wt_b.duration.seconds:
+            return False
+        elif wt_a.period.seconds != wt_b.period.seconds:
+            return False
+    return len( schedule_a ) == len( schedule_b )
         
 
 ############################################################################################
@@ -198,21 +212,12 @@ class UpdateMonitor ( QtCore.QThread ):
                         self.device_update_signal.emit( dev_update.device, dev_update.status )
 
                 elif container.HasField( 'all_watering_times' ):
-                    self.print_info_signal.emit( 'WATERING SCHEDULE:' )
                     watering_times = [ x for x in container.all_watering_times.times ]
                     watering_times.sort( key=lambda x:x.timestamp.seconds )
                     self.save_schedule.emit( watering_times )
-                    for watering_time in watering_times:
-                        dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
-                        td_dur = timedelta( seconds=watering_time.duration.seconds )
-                        td_period = timedelta( seconds=watering_time.period.seconds )
-                        msg = 'Watering scheduled for ' + str( td_dur.seconds // 60 ) + ' minute(s) on ' + str( dt ) + ' repeating every ' + str( td_period.days ) + ' day(s)'
-                        self.print_info_signal.emit( msg )
 
                 elif container.HasField( 'no_watering_times' ):
                     self.save_schedule.emit( [] )
-                    self.print_info_signal.emit( 'WATERING SCHEDULE:' )
-                    self.print_info_signal.emit( 'No watering times scheduled!' )
 
                 elif container.HasField( 'logs' ):
                     if container.logs == '':
@@ -731,7 +736,7 @@ class Ui_MainWindow(object):
         self.btn_about.pressed.connect( self.about )
 
         # Connect get schedule button to slot
-        self.btn_get_sched.pressed.connect( self.get_schedule )
+        self.btn_get_sched.pressed.connect( self.print_schedule )
 
         # Connect start watering button to slot
         self.btn_start_water.pressed.connect( self.start_watering )
@@ -765,6 +770,9 @@ class Ui_MainWindow(object):
         # Initialize popup to None
         self.popup = None
 
+        # Initialize schedule to None
+        self.schedule = None
+
         # Hook up sensor overrides if demo mode
         if DEMO_MODE:
             self.lbl_tank_full_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_TANK_FULL, self.lbl_tank_full_disp ) )
@@ -782,7 +790,7 @@ class Ui_MainWindow(object):
         self.lbl_port.setText(_translate("MainWindow", "Port:"))
         self.btn_connect.setText(_translate("MainWindow", "Connect"))
         self.gb_watering.setTitle(_translate("MainWindow", "Watering"))
-        self.btn_get_sched.setText(_translate("MainWindow", "Get Schedule"))
+        self.btn_get_sched.setText(_translate("MainWindow", "Print Schedule"))
         self.lbl_water_dur.setText(_translate("MainWindow", "Duration"))
         self.lbl_water_dur_units.setText(_translate("MainWindow", "min"))
         self.btn_start_water.setText(_translate("MainWindow", "Start"))
@@ -840,6 +848,7 @@ class Ui_MainWindow(object):
             self.receiver.lost_conn.connect( self.disconnect )
             self.receiver.server_alive.connect( self.postpone_pulse_mon )
             self.heartbeat.timeout.connect( self.get_device_updates )
+            self.heartbeat.timeout.connect( self.get_schedule )
             self.pulse_mon.timeout.connect( self.disconnect )
 
             # Start comms threads
@@ -972,9 +981,22 @@ class Ui_MainWindow(object):
         self.q_out_enqueue( container )
 
     def save_schedule ( self, schedule ):
-        self.cw_schedule.set_schedule( schedule )
-        if self.popup:
-            self.popup.set_schedule( schedule )
+        if not are_schedules_same( self.schedule, schedule ):
+            self.schedule = schedule.copy()
+            self.cw_schedule.set_schedule( schedule )
+            if self.popup:
+                self.popup.set_schedule( schedule )
+            self.print_schedule()
+            
+    def print_schedule ( self ):
+        self.text_output.append( 'WATERING SCHEDULE:' )
+        if not self.schedule:
+            self.text_output.append( 'No watering times scheduled!' )
+        for watering_time in self.schedule:
+            dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+            td_dur = timedelta( seconds=watering_time.duration.seconds )
+            td_period = timedelta( seconds=watering_time.period.seconds )
+            self.text_output.append( 'Watering scheduled for ' + str( td_dur.seconds // 60 ) + ' minute(s) on ' + str( dt ) + ' repeating every ' + str( td_period.days ) + ' day(s)' )
 
     def q_out_enqueue ( self, container ):
         self.q_out_lock.lock()
