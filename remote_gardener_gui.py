@@ -46,6 +46,35 @@ day_map = {
     6: 'Sunday'
 }
 
+def is_watering_scheduled ( date_to_check, schedule ):
+    # Is date in the past?
+    dt_today = datetime.today()
+    date_today = dt_today.date()
+    if date_to_check < date_today:
+        return ( [], False )
+
+    times = []
+    origin = False
+    for watering_time in schedule:
+        dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+        dt_date = dt.date()
+        td_period = timedelta( seconds=watering_time.period.seconds )
+        # Is this watering time not expired?
+        if dt >= dt_today:
+            # Is this watering time on the date to check?
+            if date_to_check == dt_date:
+                times.append( watering_time )
+                origin = True
+            elif date_to_check > dt_date:
+                td_between = date_to_check - dt_date
+                td_0 = timedelta()
+                # Check if time between events a multiple of the period
+                if td_between % td_period == td_0:
+                    times.append( watering_time )
+
+    return ( times, origin )
+        
+
 ############################################################################################
 # Thread that handles sending
 class Sender ( QtCore.QThread ):
@@ -168,12 +197,6 @@ class UpdateMonitor ( QtCore.QThread ):
                     for dev_update in container.all_device_updates.updates:
                         self.device_update_signal.emit( dev_update.device, dev_update.status )
 
-                elif container.HasField( 'next_watering_time' ):
-                    dt = datetime.fromtimestamp( container.next_watering_time.timestamp.seconds )
-                    td = timedelta( seconds=container.next_watering_time.duration.seconds )
-                    msg = 'Next watering scheduled for ' + str( td ) + ' at ' + str( dt ) + ', scheduled daily: ' + str( container.next_watering_time.daily )
-                    self.print_info_signal.emit( msg )
-
                 elif container.HasField( 'all_watering_times' ):
                     self.print_info_signal.emit( 'WATERING SCHEDULE:' )
                     watering_times = [ x for x in container.all_watering_times.times ]
@@ -181,18 +204,14 @@ class UpdateMonitor ( QtCore.QThread ):
                     self.save_schedule.emit( watering_times )
                     for watering_time in watering_times:
                         dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
-                        td = timedelta( seconds=watering_time.duration.seconds )
-                        msg = ''
-                        if watering_time.daily:
-                            msg = msg + 'Daily at ' + str( dt.strftime( '%H:%M' ) ) + ' for ' + str( td.seconds // 60 ) + ' minute' + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
-                        elif watering_time.weekly:
-                            msg = msg + 'Weekly on ' + day_map[ dt.date().weekday() ] + 's at ' + str( dt.strftime( '%H:%M' ) ) + ' for ' + str( td.seconds // 60 ) + ' minute'  + ( 's' if td.seconds // 60 > 1 else '' ) + ' starting on ' + str( dt.date() )
-                        else:
-                            msg = 'Watering scheduled for ' + str( td ) + ' at ' + str( dt )
+                        td_dur = timedelta( seconds=watering_time.duration.seconds )
+                        td_period = timedelta( seconds=watering_time.period.seconds )
+                        msg = 'Watering scheduled for ' + str( td_dur.seconds // 60 ) + ' minute(s) on ' + str( dt ) + ' repeating every ' + str( td_period.days ) + ' day(s)'
                         self.print_info_signal.emit( msg )
 
                 elif container.HasField( 'no_watering_times' ):
                     self.save_schedule.emit( [] )
+                    self.print_info_signal.emit( 'WATERING SCHEDULE:' )
                     self.print_info_signal.emit( 'No watering times scheduled!' )
 
                 elif container.HasField( 'logs' ):
@@ -233,18 +252,7 @@ class TableModel( QtCore.QAbstractTableModel ):
         dt_today = datetime.today()
         dt_clicked = self.dt
         dt_clicked_date = dt_clicked.date()
-        if dt_clicked_date >= dt_today.date() and self.schedule:
-            for watering_time in self.schedule:
-                dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
-                td = timedelta( seconds=watering_time.duration.seconds )
-                period = watering_time.period
-                if dt_clicked_date >= dt.date():
-                    if watering_time.weekly and dt.date().weekday() == ( date.dayOfWeek() - 1 ):
-                        self.table.append( [ dt.time(), td.seconds // 60, period ] )
-                    elif watering_time.daily:
-                        self.table.append( [ dt.time(), td.seconds // 60, period ] )
-                    elif dt.date() == dt_clicked.date():
-                        self.table.append( [ dt.time(), td.seconds // 60, period ] )
+        self.table = list( [ [ datetime.fromtimestamp( x.timestamp.seconds ).time(), x.duration.seconds // 60, x.period.seconds // 86400 ] for x in is_watering_scheduled( dt_clicked_date, self.schedule )[0] ] )
 
         self.table.sort()
 
@@ -307,17 +315,19 @@ class DaySchedule ( QtWidgets.QDialog ):
         self.ui.tv_day_sched.setModel( self.model )
         self.ui.tv_day_sched.doubleClicked.connect( self.copy_from_cell )
         self.ui.btn_sched.clicked.connect( self.schedule_watering )
+        self.ui.btn_unsched.clicked.connect( self.unschedule_watering )
 
     def schedule_watering ( self ):
         period = self.ui.hs_period.value()
         duration = self.ui.hs_dur.value()
         time = self.ui.te_d_tod.time()
         dt = datetime( year=self.dt.year, month=self.dt.month, day=self.dt.day, hour=time.hour(), minute=time.minute() )
-        td = timedelta( minutes=duration )
+        td_dur = timedelta( minutes=duration )
+        td_period = timedelta( days=period )
         container = tool_shed.container()
         container.set_watering_time.timestamp.seconds = int( dt.timestamp() )
-        container.set_watering_time.duration.FromTimedelta( td )
-        container.set_watering_time.period = period
+        container.set_watering_time.duration.FromTimedelta( td_dur )
+        container.set_watering_time.period.FromTimedelta( td_period )
         self.send_signal.emit( container )
         container = tool_shed.container()
         container.get_watering_times = 1
@@ -328,11 +338,12 @@ class DaySchedule ( QtWidgets.QDialog ):
         duration = self.ui.hs_dur.value()
         time = self.ui.te_d_tod.time()
         dt = datetime( year=self.dt.year, month=self.dt.month, day=self.dt.day, hour=time.hour(), minute=time.minute() )
-        td = timedelta( minutes=duration )
+        td_dur = timedelta( minutes=duration )
+        td_period = timedelta( days=period )
         container = tool_shed.container()
         container.cancel_watering_time.timestamp.seconds = int( dt.timestamp() )
-        container.cancel_watering_time.duration.FromTimedelta( td )
-        container.cancel_watering_time.period = period
+        container.cancel_watering_time.duration.FromTimedelta( td_dur )
+        container.cancel_watering_time.period.FromTimedelta( td_period )
         self.send_signal.emit( container )
         container = tool_shed.container()
         container.get_watering_times = 1
@@ -372,51 +383,20 @@ class QPaintableCalendarWidget( QtWidgets.QCalendarWidget ):
         dt_painting = datetime( year=date.year(), month=date.month(), day=date.day() )
         dt_painting_date = dt_painting.date()
         super().paintCell( painter, rect, date )
-        if dt_painting_date >= dt_today.date() and self.schedule:
-            bg_color = QtGui.QColor( 'blue' )
-            bg_color.setAlpha( 64 )
-            bg_color_dark = QtGui.QColor( 'darkBlue' )
-            bg_color_dark.setAlpha( 128 )
+        bg_color = QtGui.QColor( 'blue' )
+        bg_color.setAlpha( 64 )
+        bg_color_dark = QtGui.QColor( 'darkBlue' )
+        bg_color_dark.setAlpha( 128 )
+        found_watering_times, origin = is_watering_scheduled( dt_painting_date, self.schedule )
+        if found_watering_times:
             painter.save()
-            overrode = False
-            num_of_watering_events = 0
-            for watering_time in self.schedule:
-                dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
-                if dt_painting_date >= dt.date():
-                    if watering_time.weekly and dt.date().weekday() == ( date.dayOfWeek() - 1 ):
-                        if dt_painting_date == dt.date():
-                            overrode = True
-                            super().paintCell( painter, rect, date )
-                            painter.fillRect( rect, bg_color_dark )
-                        elif not overrode:
-                            overrode = True
-                            painter.fillRect( rect, bg_color )
-                        num_of_watering_events = num_of_watering_events + 1
-                    elif watering_time.daily:
-                        if dt_painting_date == dt.date():
-                            overrode = True
-                            super().paintCell( painter, rect, date )
-                            painter.fillRect( rect, bg_color_dark )
-                        if not overrode:
-                            overrode = True
-                            painter.fillRect( rect, bg_color )
-                        num_of_watering_events = num_of_watering_events + 1
-                    elif dt.date() == dt_painting.date():
-                        if dt_painting_date == dt.date():
-                            overrode = True
-                            super().paintCell( painter, rect, date )
-                            painter.fillRect( rect, bg_color_dark )
-                        if not overrode:
-                            overrode = True
-                            painter.fillRect( rect, bg_color )
-                        num_of_watering_events = num_of_watering_events + 1
-            if num_of_watering_events:
-                font = painter.font()
-                font.setPointSize( 5 * font.pointSize() // 6 )
-                font.setBold( True )
-                font.setItalic( True )
-                painter.setFont( font )
-                painter.drawText( rect, 0, 'x' + str( num_of_watering_events ) )
+            painter.fillRect( rect, bg_color_dark if origin else bg_color )
+            font = painter.font()
+            font.setPointSize( 5 * font.pointSize() // 6 )
+            font.setBold( True )
+            font.setItalic( True )
+            painter.setFont( font )
+            painter.drawText( rect, 0, 'x' + str( len( found_watering_times ) ) )
             painter.restore()
 ############################################################################################
 

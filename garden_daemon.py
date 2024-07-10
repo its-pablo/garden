@@ -114,6 +114,24 @@ def gardener( q_in, q_out, kill ):
 		container.logs = logs
 		q_out.put( container )
 
+	def is_date_conflict ( dt_to_check, dt_base, td_base_period ):
+		td_0 = timedelta( 0 )
+		# Not conflicting if datetime to check happens before base datetime
+		if dt_to_check < dt_base:
+			return False
+
+		# Same datetime so obviously conflict
+		elif dt_to_check == dt_base:
+			return True
+
+		# Might still have conflict if periodic multiple
+		elif ( dt_to_check - dt_base ) % td_base_period == td_0:
+			return True
+
+		# No conflict
+		else:
+			return False
+
 	# Check to see if the watering schedule file exists
 	if path.isfile( WATERING_SCHEDULE_FILE_NAME ):
 		print( 'Watering schedule exists! Importing and updating.' )
@@ -130,21 +148,14 @@ def gardener( q_in, q_out, kill ):
 				if watering_time.timestamp.seconds > int( dt_now.timestamp() ):
 					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
 				
-				# Expired but daily, schedule new watering time
-				elif watering_time.daily:
+				# Expired but periodic
+				elif watering_time.period.seconds > 0:
 					dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+					td_period = timedelta( seconds=watering_time.period.seconds )
 					td = dt_now - dt
-					td = timedelta( days=td.days ) + timedelta( days=1 )
-					dt = dt + td
-					watering_time.timestamp.seconds = int( dt.timestamp() )
-					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
-
-				# Expired but weekly, schedule new watering time
-				elif watering_time.weekly:
-					dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
-					td = dt_now - dt
-					td = timedelta( days=td.weeks ) + timedelta( weeks=1 )
-					dt = dt + td
+					num_periods = td // td_period
+					num_periods = num_periods + 1
+					dt = dt + ( td_period + num_periods )
 					watering_time.timestamp.seconds = int( dt.timestamp() )
 					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
 		
@@ -270,16 +281,10 @@ def gardener( q_in, q_out, kill ):
 					# Create timer to expire after the duration of the watering event
 					threading.Timer( interval=watering_time.duration.seconds, function=stop_watering_guarded, args=[ seconds ] ).start()
 				
-				# Reschedule watering event if daily or weekly
-				if watering_time.daily:
+				# Reschedule watering event if periodic
+				if watering_time.period.seconds > 0:
 					dt = datetime.fromtimestamp( seconds )
-					dt = dt + timedelta( days=1 )
-					watering_time.timestamp.seconds = int( dt.timestamp() )
-					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
-
-				elif watering_time.weekly:
-					dt = datetime.fromtimestamp( seconds )
-					dt = dt + timedelta( weeks=1 )
+					dt = dt + timedelta( seconds=watering_time.period.seconds )
 					watering_time.timestamp.seconds = int( dt.timestamp() )
 					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
 
@@ -350,8 +355,15 @@ def gardener( q_in, q_out, kill ):
 			elif container.HasField( 'set_watering_time' ):
 				dt = datetime.today()
 				if int( dt.timestamp() ) <= container.set_watering_time.timestamp.seconds:
-					heapq.heappush( q_water, ( container.set_watering_time.timestamp.seconds, container.set_watering_time ) )
-					write_water_sched_to_json()
+					conflict = False
+					for seconds, watering_time in q_water:
+						if is_date_conflict( datetime.fromtimestamp( container.set_watering_time.timestamp.seconds ), datetime.fromtimestamp( seconds ), timedelta( seconds=watering_time.period.seconds ) ):
+							conflict = True
+							break
+
+					if not conflict:
+						heapq.heappush( q_water, ( container.set_watering_time.timestamp.seconds, container.set_watering_time ) )
+						write_water_sched_to_json()
 
 			elif container.HasField( 'get_next_watering_time' ):
 				container = tool_shed.container()
@@ -402,26 +414,26 @@ def gardener( q_in, q_out, kill ):
 				# Check if any watering events are queued
 				if q_water:
 					# Get time of day we are cancelling
-					daily_cancel = container.cancel_watering_time.daily
-					weekly_cancel = container.cancel_watering_time.weekly
 					dt_cancel = datetime.fromtimestamp( container.cancel_watering_time.timestamp.seconds )
 
 					# Create new version of queue
 					q_water_new = []
-					
-					# Copy over non-cancelled watering times
-					for seconds, watering_time in q_water:
-						daily = watering_time.daily
-						weekly = watering_time.weekly
-						dt = datetime.fromtimestamp( seconds )
-						if daily_cancel and daily and dt.hour == dt_cancel.hour and dt.minute == dt_cancel.minute:
-							continue
-						elif weekly_cancel and weekly and dt.hour == dt_cancel.hour and dt.minute == dt_cancel.minute and dt.date().weekday() == dt_cancel.date().weekday():
-							continue
-						elif not daily_cancel and not weekly_cancel and dt == dt_cancel:
-							continue
-						else:
-							heapq.heappush( q_water_new, ( seconds, watering_time ) )
+
+					# Handle non-periodic, exact timestamp match
+					if container.cancel_watering_time.period.seconds == 0:
+						# Copy over non-cancelled watering times
+						for seconds, watering_time in q_water:
+							dt = datetime.fromtimestamp( seconds )
+							if dt != dt_cancel:
+								heapq.heappush( q_water_new, ( seconds, watering_time ) )
+
+					# Handle periodic, exact time of day match spanned over all watering time periods
+					else:
+						# Copy over non-cancelled watering times
+						for seconds, watering_time in q_water:
+							dt = datetime.fromtimestamp( seconds )
+							if not is_date_conflict( dt_cancel, dt, timedelta( seconds=watering_time.period.seconds ) ):
+								heapq.heappush( q_water_new, ( seconds, watering_time ) )
 
 					# Copy over to old queue
 					q_water = q_water_new.copy()

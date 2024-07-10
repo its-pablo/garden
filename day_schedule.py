@@ -23,7 +23,6 @@ class Ui_DaySchedule(object):
         self.tv_day_sched = QtWidgets.QTableView(parent=self.gb_d_sched)
         self.tv_day_sched.setObjectName("tv_day_sched")
         self.tv_day_sched.horizontalHeader().setCascadingSectionResizes(True)
-        self.tv_day_sched.horizontalHeader().setStretchLastSection(True)
         self.tv_day_sched.verticalHeader().setVisible(False)
         self.verticalLayout_2.addWidget(self.tv_day_sched)
         self.verticalLayout.addWidget(self.gb_d_sched)
