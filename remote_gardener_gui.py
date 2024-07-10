@@ -18,6 +18,7 @@ import garden_pb2 as tool_shed
 from google.protobuf.message import DecodeError
 from datetime import timedelta
 from datetime import datetime
+from day_schedule import Ui_DaySchedule
 
 # Connection variables
 HOST = '192.168.1.178'
@@ -221,6 +222,16 @@ class QClickableLabel( QtWidgets.QLabel ):
     def mousePressEvent( self, event ):
         self.clicked.emit()
 ############################################################
+
+
+###################################################
+# Wrap day schedule
+class DaySchedule ( QtWidgets.QDialog ):
+    def __init__ ( self, parent=None ):
+        QtWidgets.QDialog.__init__( self, parent )
+        self.ui = Ui_DaySchedule()
+        self.ui.setupUi( self )
+###################################################
 
 
 ############################################################################################
@@ -736,8 +747,9 @@ class Ui_MainWindow(object):
         self.de_sched.dateChanged.connect( self.sync_date_edit_onto_calendar )
         self.cw_schedule.selectionChanged.connect( self.sync_calendar_onto_date_edit )
 
-        # Connect calendar enter signal
+        # Connect calendar signals
         self.cw_schedule.activated.connect( self.cw_schedule.check_day )
+        self.cw_schedule.activated.connect( self.day_schedule_popup )
         self.cw_schedule.print_info_signal.connect( self.text_output.append )
 
         # Set 24 hour format for time edit
@@ -1021,6 +1033,10 @@ class Ui_MainWindow(object):
         cw_date = self.cw_schedule.selectedDate()
         if de_date != cw_date:
             self.de_sched.setDate( cw_date )
+
+    def day_schedule_popup ( self, self.centralwidget ):
+        popup = DaySchedule( self.centralwidget )
+        popup.exec()
 
 
 if __name__ == "__main__":
