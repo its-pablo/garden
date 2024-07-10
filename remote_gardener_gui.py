@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 # Form implementation generated from reading ui file 'remote_gardener.ui'
 #
 # Created by: PyQt6 UI code generator 6.4.2
