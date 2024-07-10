@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package garden;
+
+message container {
+	enum devices {
+		DEV_UNK = 0;
+		DEV_ACT_PUMP = 1;
+		DEV_ACT_VALVE = 2;
+		DEV_SNS_WATER_LVL_HIGH = 3;
+		DEV_SNS_WATER_LVL_LOW = 4;
+	}
+	
+	enum device_status {
+		STAT_UNK = 0;
+		STAT_ACT_ON = 1;
+		STAT_ACT_OFF = 2;
+		STAT_SNS_ACTIVE = 3;
+		STAT_SNS_INACTIVE = 4;
+	}
+
+	message device_update {
+		devices device = 1;
+		device_status status = 2;
+	}
+
+	message device_update_request {
+		devices device = 1;
+	}
+
+	oneof contents {
+		int32 heartbeat = 1;
+		device_update update = 2;
+		device_update_request update_rqst = 3;
+	}
+}
