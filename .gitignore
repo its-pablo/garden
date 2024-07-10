@@ -165,3 +165,7 @@ event_log.txt
 
 # Protobuf compiler
 protoc-27.2-win64
+
+# Fresh generated ui to py GUIs
+ui_files/remote_gardener.py
+ui_files/day_schedule.py
