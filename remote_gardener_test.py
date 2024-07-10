@@ -8,6 +8,9 @@ import threading
 import queue
 import socket
 import garden_pb2 as tool_shed
+from google.protobuf.json_format import MessageToJson
+from datetime import timedelta
+from datetime import datetime
 
 # Set up thread safe queue
 q_in = queue.Queue()
@@ -34,7 +37,27 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 						container = tool_shed.container()
 						container.ParseFromString( data )
 						#q_in.put( container )
-						print( 'Received update:', container )
+
+						if container.HasField( 'update' ):
+							print( 'Received update:' )
+							print( container.update )
+
+						elif container.HasField( 'next_watering_time' ):
+							dt = datetime.fromtimestamp( container.next_watering_time.timestamp.seconds )
+							td = timedelta( seconds=container.next_watering_time.duration.seconds )
+							print( 'Next watering scheduled for', td, 'at', dt, ', scheduled daily:', container.next_watering_time.daily )
+
+						elif container.HasField( 'all_watering_times' ):
+							print( 'Received all scheduled watering times:' )
+							#print( MessageToJson( container.all_watering_times ) )
+							for watering_time in container.all_watering_times.times:
+								dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+								td = timedelta( seconds=watering_time.duration.seconds )
+								print( 'Watering scheduled for', td, 'at', dt, ', scheduled daily:', watering_time.daily )
+
+						else:
+							print( 'An unsupported message has been received' )
+
 				except BlockingIOError:
 					continue
 
@@ -83,8 +106,11 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 		print( '\t1. WATER_LVL_LOW sensor update' )
 		print( '\t2. PUMP actuator update' )
 		print( '\t3. VALVE actuator update' )
+		print( '\t4. Set daily watering time' )
+		print( '\t5. Get next scheduled watering time' )
+		print( '\t6. Get all scheduled watering times' )
 		print( '\tPress ENTER to exit.' )
-		choice = input( 'Choice?\n' )
+		choice = input( 'Choice:\n' )
 		if not choice:
 			break
 		try:
@@ -97,10 +123,42 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 				container.update_rqst.device = tool_shed.container.devices.DEV_ACT_PUMP
 			elif choice == 3:
 				container.update_rqst.device = tool_shed.container.devices.DEV_ACT_VALVE
+			elif choice == 4:
+				hour = input( 'Input an hour of day (0 - 23):\n' )
+				minute = input( 'Input a minute of hour (0 - 59):\n' )
+				try:
+					hour = int( hour )
+					minute = int( minute )
+					if hour < 0 or hour > 23:
+						print( 'Not an hour of day!' )
+						container = None
+					elif minute < 0 or minute > 59:
+						print( 'Not a minute of hour!' )
+						container = None
+					else:
+						dt = datetime.today()
+						print( dt )
+						if hour < dt.hour:
+							dt = dt + timedelta( days=1 )
+						elif hour == dt.hour and minute < dt.minute:
+							dt = dt + timedelta( days=1 )
+						dt = dt.replace( hour=hour, minute=minute, second=0, microsecond=0 )
+						print( dt )
+						container.set_watering_time.timestamp.seconds = int( dt.timestamp() )
+						td = timedelta( minutes=1 )
+						container.set_watering_time.duration.FromTimedelta( td )
+						container.set_watering_time.daily = True
+				except ValueError:
+					print( 'Not an integer choice!' )
+					container = None
+			elif choice == 5:
+				container.get_next_watering_time = 1
+			elif choice == 6:
+				container.get_watering_times = 1
 			else:
 				container = None
 		except ValueError:
-			print( 'Not an integer choice! Try again.' )
+			print( 'Not an integer choice!' )
 			container = None
 
 		if container:

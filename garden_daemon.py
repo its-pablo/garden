@@ -5,8 +5,21 @@ print( 'garden_daemon is now running!' )
 # Imports
 import threading
 import queue
+import heapq
 import socket
+import json
+from os import path
+from google.protobuf.json_format import MessageToJson
+from google.protobuf.json_format import Parse
 import garden_pb2 as tool_shed
+from datetime import timedelta
+from datetime import datetime
+
+# Important constant
+VERSION = '0.2'
+HOST = 'localhost'
+PORT = 50007
+WATERING_SCHEDULE_FILE_NAME = 'watering.json'
 
 # Set up thread safe queues
 q_in = queue.Queue() # This queue is going to hold the incoming messages from the client
@@ -14,9 +27,53 @@ q_out = queue.Queue() # This queue is going to hold the outgoing messages to the
 # Note: "messages" in this context efers to the protobuf messages defined in garden.proto
 
 ###############################################################################
-# Thread that handles the requests
+# Thread that handles the gardening and requests
 def gardener():
 	print( 'Gardener thread is running' )
+
+	# Create watering queue
+	q_water = []
+
+	def save_message_to_json ( message, file_name ):
+		json_message = MessageToJson( message )
+		with open( file_name, 'w', encoding='utf-8' ) as file:
+			file.write( json_message )
+		print( 'Saved message to JSON!' )
+
+	def write_water_sched_to_json ():
+		# Check if any watering events are queued
+		if q_water:
+			# Find all queued watering events:
+			container = tool_shed.container()
+			for water in q_water:
+				time = container.all_watering_times.times.add()
+				time.CopyFrom( water[1] )
+			save_message_to_json( container, WATERING_SCHEDULE_FILE_NAME )
+
+	# Check to see if the watering schedule file exists
+	if path.isfile( WATERING_SCHEDULE_FILE_NAME ):
+		print( 'Watering schedule exists! Importing and updating.' )
+		with open( WATERING_SCHEDULE_FILE_NAME, 'r', encoding='utf-8' ) as file:
+			json_message = file.read()
+			container = tool_shed.container()
+			print( json_message )
+			container = Parse( json_message, container )
+			dt_now = datetime.today()
+			for watering_time in container.all_watering_times.times:
+				# Not expired put in q_water as is
+				if watering_time.timestamp.seconds > int( dt_now.timestamp() ):
+					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
+				# Expired but daily, schedule new watering time
+				elif watering_time.daily:
+					print( 'Rescheduling expired daily watering event' )
+					dt = datetime.fromtimestamp( watering_time.timestamp.seconds )
+					td = dt_now - dt
+					td = timedelta( days=td.days ) + timedelta( days=1 )
+					dt = dt + td
+					watering_time.timestamp.seconds = int( dt.timestamp() )
+					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
+		# Save changes
+		write_water_sched_to_json()
 
 	def handle_request( update_rqst ):
 		print( '\tDEVICE:', update_rqst )
@@ -25,34 +82,94 @@ def gardener():
 
 		if update_rqst.device == tool_shed.container.devices.DEV_ACT_PUMP:
 			container.update.status = tool_shed.container.device_status.STAT_ACT_ON
-			q_out.put( container )
 
 		elif update_rqst.device == tool_shed.container.devices.DEV_ACT_VALVE:
 			container.update.status = tool_shed.container.device_status.STAT_ACT_OFF
-			q_out.put( container )
 
 		elif update_rqst.device == tool_shed.container.devices.DEV_SNS_WATER_LVL_HIGH:
 			container.update.status = tool_shed.container.device_status.STAT_SNS_ACTIVE
-			q_out.put( container )
 
 		elif update_rqst.device == tool_shed.container.devices.DEV_SNS_WATER_LVL_LOW:
 			container.update.status = tool_shed.container.device_status.STAT_SNS_INACTIVE
-			q_out.put( container )
 
 		else:
 			print( '\tUNKNOWN' )
+			container = None
+
+		if container:
+			q_out.put( container )
+
+	def check_watering ():
+		# Check if any watering events queued
+		if q_water:
+			# Get next watering event from heap queue
+			seconds, watering_time = heapq.heappop( q_water )
+			# Check if event has expired
+			dt = datetime.today()
+			if seconds < int( dt.timestamp() ):
+				print( 'Watering event expired! Now watering.' )
+				# Schedule watering event for same time tomorrow if daily
+				if watering_time.daily:
+					dt = datetime.fromtimestamp( seconds )
+					dt = dt + timedelta( days=1 )
+					print( 'Scheduling next watering event for:', dt )
+					watering_time.timestamp.seconds = int( dt.timestamp() )
+					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
+				write_water_sched_to_json()
+			else:
+				# Next watering event not yet expired, reinsert in queue
+				heapq.heappush( q_water, ( seconds, watering_time ) )
 
 	while True:
-		container = q_in.get()
-		if container.HasField( 'update_rqst' ):
-			print( 'A device update has been requested:' )
-			handle_request( container.update_rqst )
+		try:
+			# Execution beyond get_nowait() only occures if the q_out is non-empty
+			container = q_in.get_nowait()
+			#---------------------------------------------------------------------
 
-		elif container.HasField( 'update' ):
-			print( 'A device update has been received!' )
+			if container.HasField( 'update_rqst' ):
+				print( 'A device update has been requested:' )
+				handle_request( container.update_rqst )
 
-		else:
-			print( 'An unsupported message has been received' )
+			elif container.HasField( 'set_watering_time' ):
+				print( 'A scheduled watering has been requested:' )
+				print( container.set_watering_time )
+				heapq.heappush( q_water, ( container.set_watering_time.timestamp.seconds, container.set_watering_time ) )
+				write_water_sched_to_json()
+
+			elif container.HasField( 'get_next_watering_time' ):
+				# Check if any watering events are queued
+				if q_water:
+					# Get next queued event and fill container
+					seconds, watering_time = heapq.heappop( q_water )
+					heapq.heappush( q_water, ( seconds, watering_time ) )
+					container = tool_shed.container()
+					container.next_watering_time.CopyFrom( watering_time )
+					q_out.put( container )
+
+			elif container.HasField( 'get_watering_times' ):
+				# Check if any watering events are queued
+				if q_water:
+					# Find all queued watering events:
+					container = tool_shed.container()
+					for water in q_water:
+						time = container.all_watering_times.times.add()
+						time.CopyFrom( water[1] )
+					q_out.put( container )
+
+			else:
+				print( 'An unsupported message has been received' )
+
+		except queue.Empty:
+			pass
+
+		###########################################
+		# DO ALL OUR GENERAL GARDENING TASKS HERE #
+		###########################################
+		# Check if a watering event has expired
+		check_watering()
+		###########################################
+		#             END OF GARDENING            #
+		###########################################
 
 # Turn on the gardener thread
 gardener_thread = threading.Thread( target=gardener, daemon=True )
@@ -63,8 +180,6 @@ gardener_thread.start()
 s_lock = threading.Lock()
 p_lock = threading.Lock()
 pulse = True
-HOST = 'localhost'
-PORT = 50007
 with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 	s.bind( ( HOST, PORT ) )
 	print( 'Socket is bound to:' )
@@ -133,8 +248,6 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 				
 				# Only process data if meaningful non-empty
 				if data:
-					print( 'Message received:', data )
-
 					# Set the pulse to True
 					with p_lock:
 						pulse = True
@@ -172,7 +285,6 @@ with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
 			# Shutdown and close connection, we
 			# don't have to use s_lock because
 			# we already joined sender_thread
-			conn.shutdown( socket.SHUT_RDWR )
 			conn.close()
 			# Let user know where to connect to
 			print( 'Socket is still bound to:' )
