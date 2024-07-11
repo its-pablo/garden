@@ -39,8 +39,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.9'
-          cache: 'pip' # caching pip dependencies
+          python-version: 'pypy3.9'
       - run: pip install onnxruntime-gpu
       #- run: pip install -r requirements.txt
       - uses: Martin005/pyinstaller-action@v1.2.0
