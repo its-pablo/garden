@@ -41,7 +41,7 @@ jobs:
         with:
           python-version: '3.9'
           cache: 'pip' # caching pip dependencies
-      #- run: python3 -m pip install onnxruntime
+      - run: pip install onnxruntime-gpu
       #- run: pip install -r requirements.txt
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
