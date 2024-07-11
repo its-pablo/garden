@@ -10,3 +10,13 @@ jobs:
           spec: 'specs/remote_gardener.spec'
           upload_exe_with_name: 'Remote Gardener'
           options: --onefile, --windowed, --name "Remote Gardener",
+
+  pyinstaller-mac-build:
+    runs-on: macos-latest
+    name: Create Windows Executable
+    steps:
+      - uses: Martin005/pyinstaller-action@v1.2.0
+        with:
+          spec: 'specs/remote_gardener.spec'
+          upload_exe_with_name: 'Remote Gardener'
+          options: --onefile, --windowed, --name "Remote Gardener",
