@@ -40,6 +40,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: 'pypy3.9'
+      - run: pip install --upgrade pip
       - run: pip install onnxruntime-gpu
       #- run: pip install -r requirements.txt
       - uses: Martin005/pyinstaller-action@v1.2.0
