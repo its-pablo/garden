@@ -8,9 +8,8 @@ import heapq
 import socket
 import json
 import time
-from os import getpid
-from os import path
-from os import SEEK_END
+import sys
+import os
 from pathlib import Path
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.json_format import Parse
@@ -31,7 +30,7 @@ ENABLE_TIMING = False
 
 ###############################################################################
 # Thread that handles the gardening and requests
-def gardener( q_in, q_out, kill ):
+def gardener( q_in, q_out, kill, ws_file_name, el_file_name ):
 	# Keep track of origin of current watering event
 	watering_timestamp = 0
 
@@ -68,10 +67,10 @@ def gardener( q_in, q_out, kill ):
 			for water in q_water:
 				time = container.all_watering_times.times.add()
 				time.CopyFrom( water[1] )
-			save_message_to_json( container, WATERING_SCHEDULE_FILE_NAME )
+			save_message_to_json( container, ws_file_name )
 
 	def log_event ( event ):
-		with open( EVENT_LOG_FILE_NAME, 'a', encoding='utf-8' ) as file:
+		with open( el_file_name, 'a', encoding='utf-8' ) as file:
 			dt = datetime.today()
 			log = str( dt ) + ': ' + str( event ) + '\n'
 			file.write( log )
@@ -88,7 +87,7 @@ def gardener( q_in, q_out, kill ):
 		# loop until we find X lines
 		while len( lines_found ) < lines:
 			try:
-				f.seek( block_counter * _buffer, SEEK_END )
+				f.seek( block_counter * _buffer, os.SEEK_END )
 			except IOError:  # either file is too small, or too many lines requested
 				f.seek( 0 )
 				lines_found = f.readlines()
@@ -104,7 +103,7 @@ def gardener( q_in, q_out, kill ):
 
 	def peak_event_log ( num_lines ):
 		logs = ''
-		with open( EVENT_LOG_FILE_NAME, 'a+', encoding='utf-8' ) as file:
+		with open( el_file_name, 'a+', encoding='utf-8' ) as file:
 			lines = tail( file, num_lines )
 			logs = ''.join( lines )
 		container = tool_shed.container()
@@ -130,10 +129,10 @@ def gardener( q_in, q_out, kill ):
 			return False
 
 	# Check to see if the watering schedule file exists
-	if path.isfile( WATERING_SCHEDULE_FILE_NAME ):
+	if os.path.isfile( ws_file_name ):
 		print( 'Watering schedule exists! Importing and updating.' )
 
-		with open( WATERING_SCHEDULE_FILE_NAME, 'r', encoding='utf-8' ) as file:
+		with open( ws_file_name, 'r', encoding='utf-8' ) as file:
 			json_message = file.read()
 			container = tool_shed.container()
 			container = Parse( json_message, container )
@@ -155,7 +154,7 @@ def gardener( q_in, q_out, kill ):
 					dt = dt + ( td_period * num_periods )
 					watering_time.timestamp.seconds = int( dt.timestamp() )
 					heapq.heappush( q_water, ( watering_time.timestamp.seconds, watering_time ) )
-		
+
 		# Save changes
 		write_water_sched_to_json()
 
@@ -339,7 +338,7 @@ def gardener( q_in, q_out, kill ):
 
 	print( 'Gardener process is running' )
 	# Print process ID in case it gets hung
-	print( 'PID:', getpid() )
+	print( 'PID:', os.getpid() )
 
 	while True:
 		if kill.is_set():
@@ -490,11 +489,59 @@ def gardener( q_in, q_out, kill ):
 		###########################################
 
 if __name__ == '__main__':
+	def print_argv_options ():
+		print( 'Options are:' )
+		print( '\t--help' )
+		print( '\t--host [-h] HOST' )
+		print( '\t--port [-p] PORT, PORT must be a non-negative integer' )
+		print( '\t--schedule_file [-sf] FILE_NAME' )
+		print( '\t--log_file [-lf] FILE_NAME' )
+	# Check arguments
+	if len( sys.argv ) == 2 and sys.argv[1] == '--help':
+		print_argv_options()
+		sys.exit( 0 )
+	elif len( sys.argv ) % 2 != 1:
+		print( 'Bad arguments' )
+		print_argv_options()
+		sys.exit( 0 )
+	elif len( sys.argv ) > 1:
+		for i in range( ( len( sys.argv ) - 1 ) // 2 ):
+			arg_opt = sys.argv[ i + 1 ]
+			arg_val = sys.argv[ i + 2 ]
+			if arg_opt == '--host' or arg_opt == '-h':
+				HOST = arg_val
+			elif arg_opt == '--port' or arg_opt == '-p':
+				try:
+					PORT = int( arg_val )
+					if PORT < 0:
+						print( 'Negative integer PORT' )
+				except ValueError:
+					print( 'Non integer PORT' )
+			elif arg_opt == '--schedule_file' or arg_opt == '-sf':
+				WATERING_SCHEDULE_FILE_NAME = arg_val
+			elif arg_opt == '--log_file' or arg_opt == '-lf':
+				EVENT_LOG_FILE_NAME = arg_val
+			else:
+				print( 'Unrecognized argument:', arg_opt, arg_val )
+				print_argv_options()
+				sys.exit( 0 )
 
-	# Print version
-	print( 'garden_daemon verion', VERSION, 'is now running!' )
-	# Print process ID in case it gets hung
-	print( 'PID:', getpid() )
+	# Check to see if we have write access to the watering schedule
+	if os.path.isfile( WATERING_SCHEDULE_FILE_NAME ) and ( not os.access( WATERING_SCHEDULE_FILE_NAME, os.R_OK ) or not os.access( WATERING_SCHEDULE_FILE_NAME, os.W_OK ) ):
+		print( 'Do not have read/write access to', WATERING_SCHEDULE_FILE_NAME )
+		sys.exit( 0 )
+
+	# Check to see if we have write access to the event log
+	if os.path.isfile( EVENT_LOG_FILE_NAME ) and ( not os.access( EVENT_LOG_FILE_NAME, os.R_OK ) or not os.access( EVENT_LOG_FILE_NAME, os.W_OK ) ):
+		print( 'Do not have read/write access to', EVENT_LOG_FILE_NAME )
+		sys.exit( 0 )
+
+	# Print info
+	print( 'Starting garden_daemon with the following args:' )
+	print( '\tHOST:', HOST )
+	print( '\tPORT:', PORT )
+	print( '\tWATERING_SCHEDULE_FILE_NAME:', WATERING_SCHEDULE_FILE_NAME )
+	print( '\tEVENT_LOG_FILE_NAME:', EVENT_LOG_FILE_NAME )
 
 	# Set up process safe queues
 	q_in = mp.Queue() # This queue is going to hold the incoming messages from the client
@@ -504,17 +551,17 @@ if __name__ == '__main__':
 	# Set up event for terminating threads
 	kill = mp.Event()
 
-	# Turn on the gardener process
-	gardener_process = mp.Process( target=gardener, daemon=True, args=( q_in, q_out, kill ), name='gardener_process' )
-	gardener_process.start()
-	###############################################################################
-
 	# Set connection threading
 	s_lock = threading.Lock()
 	no_pulse = threading.Event()
 	lost_conn = threading.Event()
 
 	with socket.socket( socket.AF_INET, socket.SOCK_STREAM ) as s:
+		# Print version
+		print( 'garden_daemon verion', VERSION, 'is now running!' )
+		# Print process ID in case it gets hung
+		print( 'PID:', os.getpid() )
+
 		print( 'Attempting to bind socket' )
 		while True:
 			try:
@@ -522,8 +569,17 @@ if __name__ == '__main__':
 				break
 			except OSError:
 				continue
+			except socket.gaierror as e:
+				print( str( e ) )
+				print( 'Aborting garden_daemon' )
+				sys.exit( 0 )
 		print( 'Socket is bound to:' )
 		print( s.getsockname() )
+
+		# Turn on the gardener process
+		gardener_process = mp.Process( target=gardener, daemon=True, args=( q_in, q_out, kill, WATERING_SCHEDULE_FILE_NAME, EVENT_LOG_FILE_NAME ), name='gardener_process' )
+		gardener_process.start()
+
 		s.listen( 1 )
 		print( 'Socket is listening' )
 		conn, addr = s.accept()
