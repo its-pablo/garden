@@ -46,15 +46,15 @@ jobs:
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
           spec: 'remote_gardener_gui.py'
-          upload_exe_with_name: 'remote_gardener'
-          options: --onefile, --windowed, --name "Remote Gardener",
+          upload_exe_with_name: 'remote_gardener_mac'
+          options: --onefile, --windowed, --name "Remote Gardener Mac OS",
       - uses: actions/upload-artifact@v4
         with:
-          name: remote_gardener
+          name: remote_gardener_mac
           path: ./dist
       - uses: actions/download-artifact@v4
         with:
-          name: remote_gardener
+          name: remote_gardener_mac
           path: ./dist
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
