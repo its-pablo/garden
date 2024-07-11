@@ -19,6 +19,12 @@ dummy_gpiozero.py:
   - Contains the duped versions of the digital output device and digital input device, to be used during development absent a Raspberry Pi.
 
 garden_daemon.py:
+  - Argument options:
+      - --help
+      - --host [-h] HOST
+      - --port [-p] PORT, PORT must be a non-negative integer
+      - --schedule_file [-sf] FILE_NAME
+      - --log_file [-lf] FILE_NAME
   - This is the server meant to be run on my dad's Raspberry Pi Zero configured with the GPIO specified in garden_utils.py. If you're running this not on an RPi then you should leave DUMMY = True.
   - The main process is in charge of sending and receiving messages specified in garden.proto.
   - The gardener process is in charge of handling requests and running routine garden tasks (checking sensors and toggling the pump/valve as needed, etc).
