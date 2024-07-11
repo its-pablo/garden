@@ -38,25 +38,21 @@ jobs:
     name: Create Mac OS Executable
     steps:
       - uses: actions/checkout@v4
-      #- uses: actions/setup-python@v5
-      #  with:
-      #    python-version: 'pypy3.9'
       - run: pip install protobuf
       - run: pip install PyQt6
-      #- run: pip install -r requirements.txt
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
           spec: 'remote_gardener_gui.py'
           upload_exe_with_name: 'remote_gardener_mac'
-          options: --onefile, --windowed, --name "Remote Gardener Mac OS",
+          options: --noconfirm --onefile, --windowed, --name "Remote Gardener Mac OS",
       - uses: actions/upload-artifact@v4
         with:
           name: remote_gardener_mac
-          path: ./dist_mac
+          path: ./dist
       - uses: actions/download-artifact@v4
         with:
           name: remote_gardener_mac
-          path: ./dist_mac
+          path: ./dist
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Automated Change
