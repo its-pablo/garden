@@ -4,7 +4,7 @@ jobs:
   pyinstaller-win-build:
     permissions:
       contents: write
-    runs-on: windows-latest
+    runs-on: [windows-latest, macos-13]
     name: Create Windows Executable
     steps:
       - uses: Martin005/pyinstaller-action@v1.2.0
