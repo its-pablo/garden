@@ -9,6 +9,7 @@ jobs:
     steps:
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
+          python_ver: '3.9'
           spec: 'remote_gardener_gui.py'
           requirements: 'requirements.txt'
           upload_exe_with_name: 'remote_gardener'
@@ -33,7 +34,7 @@ jobs:
   pyinstaller-mac-build:
     permissions:
       contents: write
-    runs-on: macos-12
+    runs-on: macos-13
     name: Create Mac OS Executable
     steps:
       - uses: Martin005/pyinstaller-action@v1.2.0
