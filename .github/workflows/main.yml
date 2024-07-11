@@ -37,6 +37,10 @@ jobs:
     runs-on: macos-13
     name: Create Mac OS Executable
     steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          cache: pip
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
           spec: 'remote_gardener_gui.py'
