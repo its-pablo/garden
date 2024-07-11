@@ -21,7 +21,7 @@ from day_schedule import Ui_DaySchedule
 # Connection variables
 HOST = '192.168.1.178'
 PORT = 50007
-VERSION = '0.7'
+VERSION = '0.8'
 ABOUT_STR = 'Remote Gardener v' + VERSION + ' created by Pablo Garcia Beltran (pablopgb.pgb@gmail.com)'
 DEMO_MODE = False
 

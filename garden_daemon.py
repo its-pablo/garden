@@ -19,7 +19,7 @@ from datetime import timedelta
 from datetime import datetime
 
 # Important constant
-VERSION = '0.7'
+VERSION = '0.8'
 HOST = 'localhost'
 PORT = 50007
 WATERING_SCHEDULE_FILE_NAME = Path(__file__).resolve().parent / 'watering.json'
