@@ -489,6 +489,7 @@ def gardener( q_in, q_out, kill, ws_file_name, el_file_name ):
 		###########################################
 
 if __name__ == '__main__':
+	print( sys.argv )
 	def print_argv_options ():
 		print( 'Options are:' )
 		print( '\t--help' )
@@ -506,8 +507,8 @@ if __name__ == '__main__':
 		sys.exit( 0 )
 	elif len( sys.argv ) > 1:
 		for i in range( ( len( sys.argv ) - 1 ) // 2 ):
-			arg_opt = sys.argv[ i + 1 ]
-			arg_val = sys.argv[ i + 2 ]
+			arg_opt = sys.argv[ ( 2 * i ) + 1 ]
+			arg_val = sys.argv[ ( 2 * i ) + 2 ]
 			if arg_opt == '--host' or arg_opt == '-h':
 				HOST = arg_val
 				try:
