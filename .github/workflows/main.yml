@@ -9,7 +9,6 @@ jobs:
     steps:
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
-          python_ver: '3.9'
           spec: 'remote_gardener_gui.py'
           requirements: 'requirements.txt'
           upload_exe_with_name: 'remote_gardener'
