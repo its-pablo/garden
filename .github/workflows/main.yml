@@ -12,9 +12,13 @@ jobs:
           spec: 'remote_gardener_gui.py'
           upload_exe_with_name: 'remote_gardener'
           options: --onefile, --windowed, --name "Remote Gardener",
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remote_gardener
+          path: ./dist
       - uses: actions/download-artifact@v4
         with:
-          name: ./.dist/remote_gardener
+          name: remote_gardener
           path: ./dist
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
