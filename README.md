@@ -37,6 +37,8 @@ remote_gardener_cmd.py:
   - A terminal version of the client. Has secret options -1 and -2. -1 allows you to toggle the state of a sensor when using the dummy_gpiozero classes. -2 allows you to shutdown the garden_daemon.py server.
 
 remote_gardener_gui.py:
+  - Argument options:
+      - --demo_mode [-dm] DEMO_MODE, True or False
   - A GUI client built using PyQt6. During development on desktop, leave DEMO_MODE = True, this will allow you to toggle the state of sensors for testing while using dummy_gpiozero by clicking on the state of a sensor. Similar to -1 secret option while running remote_gardener_cmd.py.
 
 day_schedule.py:
