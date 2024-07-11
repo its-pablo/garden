@@ -11,6 +11,7 @@ import time
 from os import getpid
 from os import path
 from os import SEEK_END
+from pathlib import Path
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.json_format import Parse
 from google.protobuf.message import DecodeError
@@ -23,18 +24,14 @@ from datetime import datetime
 VERSION = '0.7'
 HOST = 'localhost'
 PORT = 50007
-WATERING_SCHEDULE_FILE_NAME = 'watering.json'
-EVENT_LOG_FILE_NAME = 'event_log.txt'
+WATERING_SCHEDULE_FILE_NAME = Path(__file__).resolve().parent / 'watering.json'
+EVENT_LOG_FILE_NAME = Path(__file__).resolve().parent / 'event_log.txt'
 MUTE_HEARTBEAT = True
 ENABLE_TIMING = False
 
 ###############################################################################
 # Thread that handles the gardening and requests
 def gardener( q_in, q_out, kill ):
-	print( 'Gardener process is running' )
-	# Print process ID in case it gets hung
-	print( 'PID:', getpid() )
-
 	# Keep track of origin of current watering event
 	watering_timestamp = 0
 
@@ -339,6 +336,10 @@ def gardener( q_in, q_out, kill ):
 
 		if container:
 			q_out.put( container )
+
+	print( 'Gardener process is running' )
+	# Print process ID in case it gets hung
+	print( 'PID:', getpid() )
 
 	while True:
 		if kill.is_set():
