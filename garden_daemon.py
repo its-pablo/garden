@@ -15,7 +15,6 @@ from google.protobuf.json_format import MessageToJson
 from google.protobuf.json_format import Parse
 from google.protobuf.message import DecodeError
 import garden_pb2 as tool_shed
-import garden_utils as gu
 from datetime import timedelta
 from datetime import datetime
 
@@ -25,12 +24,19 @@ HOST = 'localhost'
 PORT = 50007
 WATERING_SCHEDULE_FILE_NAME = Path(__file__).resolve().parent / 'watering.json'
 EVENT_LOG_FILE_NAME = Path(__file__).resolve().parent / 'event_log.txt'
+DEMO_MODE = False
 MUTE_HEARTBEAT = True
 ENABLE_TIMING = False
 
 ###############################################################################
 # Thread that handles the gardening and requests
-def gardener( q_in, q_out, kill, ws_file_name, el_file_name ):
+def gardener( q_in, q_out, kill, ws_file_name, el_file_name, demo_mode=False ):
+	# Import correct garden_utils based on whether demo mode or not
+	if demo_mode:
+		import garden_utils_demo as gu
+	else:
+		import garden_utils as gu
+
 	# Keep track of origin of current watering event
 	watering_timestamp = 0
 
@@ -489,7 +495,9 @@ def gardener( q_in, q_out, kill, ws_file_name, el_file_name ):
 		###########################################
 
 if __name__ == '__main__':
-	print( sys.argv )
+	# Needed in Windows when creating an executable with PyInstaller
+	mp.freeze_support()
+
 	def print_argv_options ():
 		print( 'Options are:' )
 		print( '\t--help' )
@@ -497,6 +505,7 @@ if __name__ == '__main__':
 		print( '\t--port [-p] PORT, a valid PORT (must be a non-negative integer)' )
 		print( '\t--schedule_file [-sf] FILE_NAME' )
 		print( '\t--log_file [-lf] FILE_NAME' )
+		print( '\t--demo_mode [-dm] DEMO_MODE, True or False' )
 	# Check arguments
 	if len( sys.argv ) == 2 and sys.argv[1] == '--help':
 		print_argv_options()
@@ -530,6 +539,14 @@ if __name__ == '__main__':
 				WATERING_SCHEDULE_FILE_NAME = arg_val
 			elif arg_opt == '--log_file' or arg_opt == '-lf':
 				EVENT_LOG_FILE_NAME = arg_val
+			elif arg_opt == '--demo_mode' or arg_opt == '-dm':
+				if arg_val == 'True':
+					DEMO_MODE = True
+				elif arg_val == 'False':
+					DEMO_MODE = False
+				else:
+					print( 'DEMO_MODE not True or False' )
+					sys.exit( 0 )
 			else:
 				print( 'Unrecognized argument:', arg_opt, arg_val )
 				print_argv_options()
@@ -551,6 +568,7 @@ if __name__ == '__main__':
 	print( '\tPORT:', PORT )
 	print( '\tWATERING_SCHEDULE_FILE_NAME:', WATERING_SCHEDULE_FILE_NAME )
 	print( '\tEVENT_LOG_FILE_NAME:', EVENT_LOG_FILE_NAME )
+	print( '\tDEMO_MODE:', DEMO_MODE )
 
 	# Set up process safe queues
 	q_in = mp.Queue() # This queue is going to hold the incoming messages from the client
@@ -586,7 +604,7 @@ if __name__ == '__main__':
 		print( s.getsockname() )
 
 		# Turn on the gardener process
-		gardener_process = mp.Process( target=gardener, daemon=True, args=( q_in, q_out, kill, WATERING_SCHEDULE_FILE_NAME, EVENT_LOG_FILE_NAME ), name='gardener_process' )
+		gardener_process = mp.Process( target=gardener, daemon=True, args=( q_in, q_out, kill, WATERING_SCHEDULE_FILE_NAME, EVENT_LOG_FILE_NAME, DEMO_MODE ), name='gardener_process' )
 		gardener_process.start()
 
 		s.listen( 1 )

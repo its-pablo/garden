@@ -1,4 +1,4 @@
-from gpiozero import DigitalOutputDevice, DigitalInputDevice
+from dummy_gpiozero import DigitalOutputDevice, DigitalInputDevice
 
 # GPIO DEVICE ALLOCATION
 ACT_VALVE = DigitalOutputDevice(17)
