@@ -33,7 +33,7 @@ jobs:
   pyinstaller-mac-build:
     permissions:
       contents: write
-    runs-on: macos-13
+    runs-on: macos-latest
     name: Create Mac OS Executable
     steps:
       - uses: Martin005/pyinstaller-action@v1.2.0
