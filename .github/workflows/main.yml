@@ -1,12 +1,12 @@
 on: [push]
 
 jobs:
-  pyinstaller-build:
-  runs-on: windows-latest
-  name: Create Windows Executable
-  steps:
-    - uses: Martin005/pyinstaller-action@v1.2.0
-      with:
-        spec: 'spec/remote_gardener.spec'
-        upload_exe_with_name: 'Remote Gardener'
-        options: --onefile, --windowed, --name "Remote Gardener",
+  pyinstaller-win-build:
+    runs-on: windows-latest
+    name: Create Windows Executable
+    steps:
+      - uses: Martin005/pyinstaller-action@v1.2.0
+        with:
+          spec: 'spec/remote_gardener.spec'
+          upload_exe_with_name: 'Remote Gardener'
+          options: --onefile, --windowed, --name "Remote Gardener",
