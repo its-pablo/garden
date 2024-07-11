@@ -886,6 +886,9 @@ class Ui_MainWindow(object):
         except ConnectionRefusedError:
             self.text_output.append( 'Connection was refused' )
 
+        except socket.gaierror as e:
+            self.text_output.append( str( e ) )
+
     def disconnect ( self ):
         # Stop timers
         self.heartbeat.stop()
