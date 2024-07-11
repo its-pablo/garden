@@ -8,17 +8,9 @@ jobs:
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
           spec: 'specs/remote_gardener.spec'
-          exe_path: '/dist'
-          upload_exe_with_name: 'Remote Gardener'
+          upload_exe_with_name: 'remote_gardener'
           options: --onefile, --windowed, --name "Remote Gardener",
-
-  pyinstaller-mac-build:
-    runs-on: macos-latest
-    name: Create MacOS Executable
-    steps:
-      - uses: Martin005/pyinstaller-action@v1.2.0
+      - uses: actions/upload-artifact@v4
         with:
-          spec: 'specs/remote_gardener.spec'
-          exe_path: '/dist'
-          upload_exe_with_name: 'Remote Gardener'
-          options: --onefile, --windowed, --name "Remote Gardener",
+          name: remote_gardener
+          path: ./dist
