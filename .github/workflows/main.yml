@@ -2,8 +2,6 @@ on: [push]
 
 jobs:
   pyinstaller-win-build:
-    permissions:
-      contents: write
     runs-on: windows-latest
     name: Create Windows Executable
     steps:
@@ -21,28 +19,13 @@ jobs:
         with:
           name: remote_gardener
           path: ./dist
-      - uses: stefanzweifel/git-auto-commit-action@v4
-        with:
-          commit_message: Automated Change
-          branch: main
-          commit_options: '--no-verify --signoff'
-          commit_author: Author <actions@github.com>
-          status_options: '--untracked-files=no'
-          skip_dirty_check: true
 
   pyinstaller-mac-build:
-    permissions:
-      contents: write
     runs-on: macos-13
     name: Create Mac OS Executable
     steps:
-      #- uses: actions/checkout@v4
-      #- uses: actions/setup-python@v5
-      #  with:
-      #    python-version: 'pypy3.9'
       - run: pip install protobuf
       - run: pip install PyQt6
-      #- run: pip install -r requirements.txt
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
           spec: 'remote_gardener_gui.py'
@@ -56,6 +39,13 @@ jobs:
         with:
           name: remote_gardener_mac
           path: ./dist_mac
+
+  commit_changes:
+    permissions:
+      contents: write
+    needs: [pyinstaller-win-build, pyinstaller-mac-build]
+    name: Commit executables to dists
+    steps:
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
           commit_message: Automated Change
