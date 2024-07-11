@@ -42,9 +42,10 @@ jobs:
           python-version: '3.10'
           cache: 'pip' # caching pip dependencies
       - run: python3 -m pip install onnxruntime
-      - run: pip install -r requirements.txt
+      #- run: pip install -r requirements.txt
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
+          python_ver: '3.10'
           spec: 'remote_gardener_gui.py'
           requirements: 'requirements.txt'
           upload_exe_with_name: 'remote_gardener'
