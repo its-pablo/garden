@@ -23,7 +23,7 @@ HOST = '192.168.1.178'
 PORT = 50007
 VERSION = '0.7'
 ABOUT_STR = 'Remote Gardener v' + VERSION + ' created by Pablo Garcia Beltran (pablopgb.pgb@gmail.com)'
-DEMO_MODE = True
+DEMO_MODE = False
 
 # Create device list:
 devs = {
@@ -407,7 +407,7 @@ class QPaintableCalendarWidget( QtWidgets.QCalendarWidget ):
 
 
 class Ui_MainWindow(object):
-    def setupUi(self, MainWindow):
+    def setupUi(self, MainWindow, demo_mode):
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(600, 720)
         MainWindow.setTabShape(QtWidgets.QTabWidget.TabShape.Triangular)
@@ -778,7 +778,7 @@ class Ui_MainWindow(object):
         self.schedule = None
 
         # Hook up sensor overrides if demo mode
-        if DEMO_MODE:
+        if demo_mode:
             self.lbl_tank_full_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_TANK_FULL, self.lbl_tank_full_disp ) )
             self.lbl_tank_empty_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_TANK_EMPTY, self.lbl_tank_empty_disp ) )
             self.lbl_well_empty_disp.clicked.connect( lambda: self.toggle_sensor( tool_shed.container.devices.DEV_SNS_WELL_EMPTY, self.lbl_well_empty_disp ) )
@@ -1026,6 +1026,12 @@ if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()
-    ui.setupUi(MainWindow)
+    if len( sys.argv ) == 3:
+        if sys.argv[ 1 ] == '--demo_mode' or sys.argv[ 1 ] == '-dm':
+            if sys.argv[ 2 ] == 'True':
+                DEMO_MODE = True
+            elif sys.argv[ 2 ] == 'False':
+                DEMO_MODE = False
+    ui.setupUi(MainWindow, DEMO_MODE)
     MainWindow.show()
     sys.exit(app.exec())
