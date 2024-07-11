@@ -7,6 +7,6 @@ jobs:
     steps:
       - uses: Martin005/pyinstaller-action@v1.2.0
         with:
-          spec: 'spec/remote_gardener.spec'
+          spec: 'specs/remote_gardener.spec'
           upload_exe_with_name: 'Remote Gardener'
           options: --onefile, --windowed, --name "Remote Gardener",
