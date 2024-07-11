@@ -492,8 +492,8 @@ if __name__ == '__main__':
 	def print_argv_options ():
 		print( 'Options are:' )
 		print( '\t--help' )
-		print( '\t--host [-h] HOST' )
-		print( '\t--port [-p] PORT, PORT must be a non-negative integer' )
+		print( '\t--host [-h] HOST, a valid host' )
+		print( '\t--port [-p] PORT, a valid PORT (must be a non-negative integer)' )
 		print( '\t--schedule_file [-sf] FILE_NAME' )
 		print( '\t--log_file [-lf] FILE_NAME' )
 	# Check arguments
@@ -510,13 +510,21 @@ if __name__ == '__main__':
 			arg_val = sys.argv[ i + 2 ]
 			if arg_opt == '--host' or arg_opt == '-h':
 				HOST = arg_val
+				try:
+					socket.gethostbyname( HOST )
+				except socket.gaierror as e:
+					print( 'Invalid host name' )
+					print( str( e ) )
+					sys.exit( 0 )
 			elif arg_opt == '--port' or arg_opt == '-p':
 				try:
 					PORT = int( arg_val )
 					if PORT < 0:
 						print( 'Negative integer PORT' )
+						sys.exit( 0 )
 				except ValueError:
 					print( 'Non integer PORT' )
+					sys.exit( 0 )
 			elif arg_opt == '--schedule_file' or arg_opt == '-sf':
 				WATERING_SCHEDULE_FILE_NAME = arg_val
 			elif arg_opt == '--log_file' or arg_opt == '-lf':
@@ -538,7 +546,7 @@ if __name__ == '__main__':
 
 	# Print info
 	print( 'Starting garden_daemon with the following args:' )
-	print( '\tHOST:', HOST )
+	print( '\tHOST:', HOST, 'IPv4:', socket.gethostbyname( HOST ) )
 	print( '\tPORT:', PORT )
 	print( '\tWATERING_SCHEDULE_FILE_NAME:', WATERING_SCHEDULE_FILE_NAME )
 	print( '\tEVENT_LOG_FILE_NAME:', EVENT_LOG_FILE_NAME )
