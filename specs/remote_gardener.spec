@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['remote_gardener_gui.py'],
+    ['../remote_gardener_gui.py'],
     pathex=[],
     binaries=[],
     datas=[],
