@@ -2,10 +2,10 @@ on: [push]
 
 jobs:
   pyinstaller-build:
-  runs-on: <windows-latest / ubuntu-latest / ..... etc>
+  runs-on: windows-latest
+  name: Create Windows Executable
   steps:
-    - name: Create Executable
-      uses: Martin005/pyinstaller-action@v1.2.0
+    - uses: Martin005/pyinstaller-action@v1.2.0
       with:
         spec: 'spec/remote_gardener.spec'
         upload_exe_with_name: 'Remote Gardener'
