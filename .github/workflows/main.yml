@@ -14,7 +14,7 @@ jobs:
           options: --onefile, --windowed, --name "Remote Gardener",
       - uses: actions/download-artifact@v4
         with:
-          name: remote_gardener
+          name: ./.dist/remote_gardener
           path: ./dist
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
