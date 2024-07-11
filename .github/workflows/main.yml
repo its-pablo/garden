@@ -1,3 +1,5 @@
+on: [push]
+
 jobs:
   pyinstaller-build:
   runs-on: <windows-latest / ubuntu-latest / ..... etc>
@@ -8,4 +10,3 @@ jobs:
         spec: 'spec/remote_gardener.spec'
         upload_exe_with_name: 'Remote Gardener'
         options: --onefile, --windowed, --name "Remote Gardener",
-            
