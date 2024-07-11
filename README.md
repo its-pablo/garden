@@ -21,8 +21,8 @@ dummy_gpiozero.py:
 garden_daemon.py:
   - Argument options:
       - --help
-      - --host [-h] HOST
-      - --port [-p] PORT, PORT must be a non-negative integer
+      - --host [-h] HOST, a valid HOST
+      - --port [-p] PORT, a valid PORT (must be a non-negative integer)
       - --schedule_file [-sf] FILE_NAME
       - --log_file [-lf] FILE_NAME
   - This is the server meant to be run on my dad's Raspberry Pi Zero configured with the GPIO specified in garden_utils.py. If you're running this not on an RPi then you should leave DUMMY = True.
