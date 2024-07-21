@@ -6,7 +6,6 @@ import queue
 import multiprocessing as mp
 import heapq
 import socket
-import json
 import time
 import sys
 import os
